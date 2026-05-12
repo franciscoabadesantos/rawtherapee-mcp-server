@@ -80,7 +80,162 @@ _PARAMETER_MAP: dict[str, dict[str, tuple[str, str]]] = {
     },
     "color": {
         "vibrance": ("Vibrance", "Pastels"),
+        "pastels": ("Vibrance", "Pastels"),
+        "saturated": ("Vibrance", "Saturated"),
+        "enabled": ("Vibrance", "Enabled"),
+        "psthreshold": ("Vibrance", "PSThreshold"),
+        "protectskins": ("Vibrance", "ProtectSkins"),
+        "avoidcolorshift": ("Vibrance", "AvoidColorShift"),
+        "pastsattog": ("Vibrance", "PastSatTog"),
+        "skintonescurve": ("Vibrance", "SkinTonesCurve"),
         "hue_shift": ("ColorToning", "HLHue"),
+    },
+    "vibrance": {
+        "enabled": ("Vibrance", "Enabled"),
+        "pastels": ("Vibrance", "Pastels"),
+        "saturated": ("Vibrance", "Saturated"),
+        "psthreshold": ("Vibrance", "PSThreshold"),
+        "protectskins": ("Vibrance", "ProtectSkins"),
+        "avoidcolorshift": ("Vibrance", "AvoidColorShift"),
+        "pastsattog": ("Vibrance", "PastSatTog"),
+        "skintonescurve": ("Vibrance", "SkinTonesCurve"),
+    },
+    "tone_curve": {
+        "curve_mode": ("Exposure", "CurveMode"),
+        "curvemode": ("Exposure", "CurveMode"),
+        "curve_mode2": ("Exposure", "CurveMode2"),
+        "curvemode2": ("Exposure", "CurveMode2"),
+        "curve": ("Exposure", "Curve"),
+        "curve2": ("Exposure", "Curve2"),
+    },
+    "tonecurve": {
+        "curve_mode": ("Exposure", "CurveMode"),
+        "curve_mode2": ("Exposure", "CurveMode2"),
+        "curve": ("Exposure", "Curve"),
+        "curve2": ("Exposure", "Curve2"),
+    },
+    "rgb_curves": {
+        "enabled": ("RGB Curves", "Enabled"),
+        "luma_mode": ("RGB Curves", "LumaMode"),
+        "lumamode": ("RGB Curves", "LumaMode"),
+        "r_curve": ("RGB Curves", "rCurve"),
+        "g_curve": ("RGB Curves", "gCurve"),
+        "b_curve": ("RGB Curves", "bCurve"),
+    },
+    "rgbcurve": {
+        "enabled": ("RGB Curves", "Enabled"),
+        "luma_mode": ("RGB Curves", "LumaMode"),
+        "r_curve": ("RGB Curves", "rCurve"),
+        "g_curve": ("RGB Curves", "gCurve"),
+        "b_curve": ("RGB Curves", "bCurve"),
+    },
+    "hsv_equalizer": {
+        "enabled": ("HSV Equalizer", "Enabled"),
+        "h_curve": ("HSV Equalizer", "HCurve"),
+        "s_curve": ("HSV Equalizer", "SCurve"),
+        "v_curve": ("HSV Equalizer", "VCurve"),
+    },
+    "hsl_equalizer": {
+        "enabled": ("HSV Equalizer", "Enabled"),
+        "h_curve": ("HSV Equalizer", "HCurve"),
+        "s_curve": ("HSV Equalizer", "SCurve"),
+        "v_curve": ("HSV Equalizer", "VCurve"),
+    },
+    "luminance_curve": {
+        "enabled": ("Luminance Curve", "Enabled"),
+        "brightness": ("Luminance Curve", "Brightness"),
+        "contrast": ("Luminance Curve", "Contrast"),
+        "chromaticity": ("Luminance Curve", "Chromaticity"),
+        "avoid_color_shift": ("Luminance Curve", "AvoidColorShift"),
+        "red_skin_protection": ("Luminance Curve", "RedAndSkinTonesProtection"),
+        "red_and_skin_tones_protection": ("Luminance Curve", "RedAndSkinTonesProtection"),
+        "l_curve": ("Luminance Curve", "LCurve"),
+        "a_curve": ("Luminance Curve", "aCurve"),
+        "b_curve": ("Luminance Curve", "bCurve"),
+        "cc_curve": ("Luminance Curve", "ccCurve"),
+        "ch_curve": ("Luminance Curve", "chCurve"),
+        "lh_curve": ("Luminance Curve", "lhCurve"),
+        "hh_curve": ("Luminance Curve", "hhCurve"),
+        "lc_curve": ("Luminance Curve", "LcCurve"),
+        "cl_curve": ("Luminance Curve", "ClCurve"),
+    },
+    "lab_curve": {
+        "enabled": ("Luminance Curve", "Enabled"),
+        "l_curve": ("Luminance Curve", "LCurve"),
+        "a_curve": ("Luminance Curve", "aCurve"),
+        "b_curve": ("Luminance Curve", "bCurve"),
+        "cc_curve": ("Luminance Curve", "ccCurve"),
+        "ch_curve": ("Luminance Curve", "chCurve"),
+    },
+    "color_balance": {
+        "enabled": ("ColorToning", "Enabled"),
+        "method": ("ColorToning", "Method"),
+        "luma_mode": ("ColorToning", "Lumamode"),
+        "twocolor": ("ColorToning", "Twocolor"),
+        "red_low": ("ColorToning", "Redlow"),
+        "green_low": ("ColorToning", "Greenlow"),
+        "blue_low": ("ColorToning", "Bluelow"),
+        "sat_low": ("ColorToning", "Satlow"),
+        "balance": ("ColorToning", "Balance"),
+        "sat_high": ("ColorToning", "Sathigh"),
+        "red_mid": ("ColorToning", "Redmed"),
+        "green_mid": ("ColorToning", "Greenmed"),
+        "blue_mid": ("ColorToning", "Bluemed"),
+        "red_high": ("ColorToning", "Redhigh"),
+        "green_high": ("ColorToning", "Greenhigh"),
+        "blue_high": ("ColorToning", "Bluehigh"),
+        "autosat": ("ColorToning", "Autosat"),
+        "opacity_curve": ("ColorToning", "OpacityCurve"),
+        "color_curve": ("ColorToning", "ColorCurve"),
+        "sat_protection_threshold": ("ColorToning", "SatProtectionThreshold"),
+        "saturated_opacity": ("ColorToning", "SaturatedOpacity"),
+        "strength": ("ColorToning", "Strength"),
+        "highlights_color_saturation": ("ColorToning", "HighlightsColorSaturation"),
+        "shadows_color_saturation": ("ColorToning", "ShadowsColorSaturation"),
+        "cl_curve": ("ColorToning", "ClCurve"),
+        "cl2_curve": ("ColorToning", "Cl2Curve"),
+        "lab_grid_a_low": ("ColorToning", "LabGridALow"),
+        "lab_grid_b_low": ("ColorToning", "LabGridBLow"),
+        "lab_grid_a_high": ("ColorToning", "LabGridAHigh"),
+        "lab_grid_b_high": ("ColorToning", "LabGridBHigh"),
+    },
+    "split_toning": {
+        "enabled": ("ColorToning", "Enabled"),
+        "red_low": ("ColorToning", "Redlow"),
+        "green_low": ("ColorToning", "Greenlow"),
+        "blue_low": ("ColorToning", "Bluelow"),
+        "red_mid": ("ColorToning", "Redmed"),
+        "green_mid": ("ColorToning", "Greenmed"),
+        "blue_mid": ("ColorToning", "Bluemed"),
+        "red_high": ("ColorToning", "Redhigh"),
+        "green_high": ("ColorToning", "Greenhigh"),
+        "blue_high": ("ColorToning", "Bluehigh"),
+        "balance": ("ColorToning", "Balance"),
+        "strength": ("ColorToning", "Strength"),
+    },
+    "highlight_rolloff": {
+        "enabled": ("HLRecovery", "Enabled"),
+        "method": ("HLRecovery", "Method"),
+        "highlight_compression": ("Exposure", "HighlightCompr"),
+        "highlight_compression_threshold": ("Exposure", "HighlightComprThreshold"),
+        "highlights": ("Shadows & Highlights", "Highlights"),
+        "highlight_tonal_width": ("Shadows & Highlights", "HighlightTonalWidth"),
+        "shadows": ("Shadows & Highlights", "Shadows"),
+        "shadow_tonal_width": ("Shadows & Highlights", "ShadowTonalWidth"),
+        "radius": ("Shadows & Highlights", "Radius"),
+    },
+    "microcontrast": {
+        "enabled": ("SharpenMicro", "Enabled"),
+        "strength": ("SharpenMicro", "Strength"),
+        "uniformity": ("SharpenMicro", "Uniformity"),
+        "matrix": ("SharpenMicro", "Matrix"),
+    },
+    "local_contrast": {
+        "enabled": ("Local Contrast", "Enabled"),
+        "radius": ("Local Contrast", "Radius"),
+        "amount": ("Local Contrast", "Amount"),
+        "darkness": ("Local Contrast", "Darkness"),
+        "lightness": ("Local Contrast", "Lightness"),
     },
     "lens_correction": {
         "auto": ("LensProfile", "UseDistortion"),
@@ -109,6 +264,17 @@ _PARAMETER_MAP: dict[str, dict[str, tuple[str, str]]] = {
         "strength": ("Film Simulation", "Strength"),
     },
 }
+
+
+def _serialize_pp3_value(value: object) -> str:
+    """Convert Python values into PP3-friendly text serialization."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            return "0;"
+        return ";".join(str(item) for item in value) + ";"
+    return str(value)
 
 
 def create_neutral_profile() -> PP3Profile:
@@ -196,10 +362,7 @@ def apply_parameters(
             if raw_fallback:
                 # Treat as raw PP3 section name with raw key-value pairs
                 for key, value in group_values.items():
-                    if isinstance(value, bool):
-                        profile.set(group_name, key, str(value).lower())
-                    else:
-                        profile.set(group_name, key, str(value))
+                    profile.set(group_name, key, _serialize_pp3_value(value))
             else:
                 logger.warning("Unknown parameter group: %s", group_name)
             continue
@@ -211,20 +374,13 @@ def apply_parameters(
                     # Fall back to raw PP3 key within the mapped section
                     # Use the first section name from this group's mappings
                     first_section = next(iter(group_map.values()))[0]
-                    if isinstance(param_value, bool):
-                        profile.set(first_section, param_name, str(param_value).lower())
-                    else:
-                        profile.set(first_section, param_name, str(param_value))
+                    profile.set(first_section, param_name, _serialize_pp3_value(param_value))
                 else:
                     logger.warning("Unknown parameter %s.%s", group_name, param_name)
                 continue
 
             section, key = mapping
-            # Convert booleans to lowercase strings for PP3
-            if isinstance(param_value, bool):
-                profile.set(section, key, str(param_value).lower())
-            else:
-                profile.set(section, key, str(param_value))
+            profile.set(section, key, _serialize_pp3_value(param_value))
 
 
 def apply_device_preset(profile: PP3Profile, preset: dict[str, Any]) -> None:

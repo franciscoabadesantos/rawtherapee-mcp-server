@@ -143,10 +143,32 @@ class TestEditorialWorkflowTools:
         for candidate in result["candidates"]:
             assert Path(candidate["profile_path"]).is_file()
 
+        # Ensure generated profiles include advanced tone/color controls.
+        from rawtherapee_mcp.pp3_parser import PP3Profile
+
+        by_style = {candidate["style_name"]: candidate for candidate in result["candidates"]}
+
+        clean_profile = PP3Profile()
+        clean_profile.load(Path(by_style["clean_editorial"]["profile_path"]))
+        assert clean_profile.get("Exposure", "Curve", "0;") != "0;"
+        assert clean_profile.get("Luminance Curve", "Enabled") == "true"
+
+        warm_profile = PP3Profile()
+        warm_profile.load(Path(by_style["warm_travel"]["profile_path"]))
+        assert warm_profile.get("ColorToning", "Enabled") == "true"
+        assert warm_profile.get("HSV Equalizer", "Enabled") == "true"
+
+        cinematic_profile = PP3Profile()
+        cinematic_profile.load(Path(by_style["cinematic_soft"]["profile_path"]))
+        assert cinematic_profile.get("HLRecovery", "Enabled") == "true"
+        assert cinematic_profile.get("SharpenMicro", "Enabled") == "true"
+
     async def test_critique_gate_returns_rubric_and_threshold(self, mock_ctx):
         result = await critique_gate(mock_ctx, candidate_name="warm_v1", intended_style="warm_travel")
         assert "scoring_rubric" in result
         assert "minimum_export_threshold" in result
+        assert "tonal_separation_score" in result["scoring_rubric"]
+        assert any("only changes exposure/warmth/saturation" in r for r in result["next_action_rules"])
         assert result["minimum_export_threshold"]["core_score_average_min"] == 7.0
 
     async def test_create_curation_plan(self, mock_ctx, tmp_path):

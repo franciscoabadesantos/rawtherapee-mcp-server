@@ -101,6 +101,97 @@ class TestApplyParameters:
         assert profile.get("Directional Pyramid Denoising", "Enabled") == "true"
         assert profile.get("Directional Pyramid Denoising", "Luma") == "20"
 
+    def test_tone_curve_mapping(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {"tone_curve": {"curve_mode": "Standard", "curve": "3;0;0;0.5;0.55;1;1;", "curve2": "0;"}},
+        )
+        assert profile.get("Exposure", "CurveMode") == "Standard"
+        assert profile.get("Exposure", "Curve") == "3;0;0;0.5;0.55;1;1;"
+        assert profile.get("Exposure", "Curve2") == "0;"
+
+    def test_rgb_curves_mapping(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {"rgb_curves": {"enabled": True, "luma_mode": False, "r_curve": "0;", "g_curve": "0;", "b_curve": "0;"}},
+        )
+        assert profile.get("RGB Curves", "Enabled") == "true"
+        assert profile.get("RGB Curves", "LumaMode") == "false"
+        assert profile.get("RGB Curves", "rCurve") == "0;"
+
+    def test_luminance_curve_mapping(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {
+                "luminance_curve": {
+                    "enabled": True,
+                    "contrast": 12,
+                    "avoid_color_shift": True,
+                    "l_curve": "3;0;0;0.5;0.55;1;1;",
+                }
+            },
+        )
+        assert profile.get("Luminance Curve", "Enabled") == "true"
+        assert profile.get("Luminance Curve", "Contrast") == "12"
+        assert profile.get("Luminance Curve", "AvoidColorShift") == "true"
+        assert profile.get("Luminance Curve", "LCurve") == "3;0;0;0.5;0.55;1;1;"
+
+    def test_color_balance_mapping(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {
+                "color_balance": {
+                    "enabled": True,
+                    "method": "Lab",
+                    "red_low": -4,
+                    "blue_high": -3,
+                    "strength": 28,
+                }
+            },
+        )
+        assert profile.get("ColorToning", "Enabled") == "true"
+        assert profile.get("ColorToning", "Method") == "Lab"
+        assert profile.get("ColorToning", "Redlow") == "-4"
+        assert profile.get("ColorToning", "Bluehigh") == "-3"
+        assert profile.get("ColorToning", "Strength") == "28"
+
+    def test_hsv_equalizer_mapping(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {"hsv_equalizer": {"enabled": True, "s_curve": "0;", "v_curve": "0;"}},
+        )
+        assert profile.get("HSV Equalizer", "Enabled") == "true"
+        assert profile.get("HSV Equalizer", "SCurve") == "0;"
+        assert profile.get("HSV Equalizer", "VCurve") == "0;"
+
+    def test_highlight_rolloff_mapping(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {
+                "highlight_rolloff": {
+                    "enabled": True,
+                    "method": "Coloropp",
+                    "highlight_compression": 34,
+                    "highlight_tonal_width": 72,
+                }
+            },
+        )
+        assert profile.get("HLRecovery", "Enabled") == "true"
+        assert profile.get("HLRecovery", "Method") == "Coloropp"
+        assert profile.get("Exposure", "HighlightCompr") == "34"
+        assert profile.get("Shadows & Highlights", "HighlightTonalWidth") == "72"
+
+    def test_list_values_are_serialized_for_pp3(self):
+        profile = create_neutral_profile()
+        apply_parameters(profile, {"vibrance": {"psthreshold": [10, 72]}})
+        assert profile.get("Vibrance", "PSThreshold") == "10;72;"
+
     def test_multiple_groups(self):
         profile = create_neutral_profile()
         apply_parameters(

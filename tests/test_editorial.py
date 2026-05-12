@@ -73,8 +73,12 @@ class TestEditorialCandidateParameters:
         cinematic = editorial_candidate_parameters("cinematic_soft")
 
         assert clean["white_balance"]["temperature"] != warm["white_balance"]["temperature"]
-        assert warm["exposure"]["saturation"] > clean["exposure"]["saturation"]
+        assert warm["color_balance"]["enabled"] is True
+        assert clean["tone_curve"]["curve"] != cinematic["tone_curve"]["curve"]
         assert cinematic["exposure"]["contrast"] < clean["exposure"]["contrast"]
+        assert clean["luminance_curve"]["enabled"] is True
+        assert warm["hsv_equalizer"]["enabled"] is True
+        assert cinematic["highlight_rolloff"]["enabled"] is True
 
 
 class TestBuildCritiqueGate:
@@ -85,12 +89,19 @@ class TestBuildCritiqueGate:
 
         rubric = gate["scoring_rubric"]
         assert "subject_separation_score" in rubric
+        assert "tonal_separation_score" in rubric
+        assert "curve_quality_highlight_rolloff_score" in rubric
+        assert "skin_orange_control_score" in rubric
+        assert "green_grass_control_score" in rubric
+        assert "sky_blue_control_score" in rubric
+        assert "basic_adjustment_penalty" in rubric
         assert "overprocessing_penalty" in rubric
         assert "post_worthy_verdict" in rubric
 
         threshold = gate["minimum_export_threshold"]
         assert threshold["core_score_average_min"] == 7.0
         assert threshold["overprocessing_penalty_max"] == 3
+        assert any("only changes exposure/warmth/saturation" in rule for rule in gate["next_action_rules"])
 
 
 class TestBuildCurationPlan:

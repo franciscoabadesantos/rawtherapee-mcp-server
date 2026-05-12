@@ -429,6 +429,20 @@ Example 3: Folder curation
 Example 4: Reject weak photos
 "Be critical. If the composition, light, or focus is too weak, say so. Prefer proof_only/reject over pretending the image is professional."
 
+### Advanced Tone and Color Controls
+
+Editorial candidates now use richer tone/color controls where RawTherapee PP3 supports them, not only exposure/warmth/saturation shifts.
+
+- Gentle/global tone curves and style-dependent curve shaping
+- Highlight rolloff controls and softer highlight handling
+- Lifted-black cinematic contrast structures
+- Warm/cool shadow-highlights color separation
+- Skin/orange protection and cast control
+- Sky/green control through HSV equalizer mappings
+- Extended vibrance controls (`ProtectSkins`, `AvoidColorShift`, threshold curves)
+
+RawTherapee-only limits still apply: no generative retouching, no object removal, and no true semantic subject masks.
+
 ## Updating
 
 Both installation methods require a two-step procedure. Upgrading the package alone is not enough - Claude Desktop caches the MCP server's tool list. Always follow the full sequence: update package → fully quit Claude Desktop → relaunch.

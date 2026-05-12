@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from rawtherapee_mcp.advanced_color import (
-    cinematic_soft_color_separation,
     clean_midtone_contrast,
     clean_sky_blue,
     gentle_s_curve,
@@ -16,7 +15,6 @@ from rawtherapee_mcp.advanced_color import (
     protect_skin_reduce_orange,
     reduce_green_gray_cast,
     soft_highlight_rolloff,
-    warm_sand_preserve_skin,
 )
 
 SUPPORTED_EDITORIAL_STYLES = (
@@ -690,22 +688,15 @@ def editorial_candidate_parameters(
     elif style_name == "warm_travel":
         advanced_layers = [
             gentle_s_curve(),
-            warm_sand_preserve_skin(),
             soft_highlight_rolloff(),
+            protect_skin_reduce_orange(),
             clean_sky_blue(),
             natural_green_control(),
-            {
-                "color_balance": {
-                    "enabled": True,
-                    "strength": 36,
-                    "highlights_color_saturation": [62, 82],
-                    "shadows_color_saturation": [74, 196],
-                }
-            },
         ]
     elif style_name == "cinematic_soft":
         advanced_layers = [
-            cinematic_soft_color_separation(),
+            gentle_s_curve(),
+            soft_highlight_rolloff(),
             reduce_green_gray_cast(),
             {
                 "tone_curve": {"curve_mode2": "Standard", "curve2": "3;0;0.10;0.20;0.22;0.55;0.58;1;0.94;"},

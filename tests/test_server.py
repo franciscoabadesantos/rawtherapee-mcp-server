@@ -185,12 +185,13 @@ class TestEditorialWorkflowTools:
 
         warm_profile = PP3Profile()
         warm_profile.load(Path(by_style["warm_travel"]["profile_path"]))
-        assert warm_profile.get("ColorToning", "Enabled") == "true"
         assert warm_profile.get("HSV Equalizer", "Enabled") == "true"
+        assert warm_profile.get("ColorToning", "Enabled", "") == ""
 
         cinematic_profile = PP3Profile()
         cinematic_profile.load(Path(by_style["cinematic_soft"]["profile_path"]))
         assert cinematic_profile.get("HLRecovery", "Enabled") == "true"
+        assert cinematic_profile.get("ColorToning", "Enabled", "") == ""
         assert cinematic_profile.get("SharpenMicro", "Enabled") == "false"
         assert cinematic_profile.get("SharpenMicro", "Amount") == "15"
         assert cinematic_profile.get("SharpenMicro", "Contrast") == "20"

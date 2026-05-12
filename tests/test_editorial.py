@@ -86,12 +86,13 @@ class TestEditorialCandidateParameters:
         cinematic = editorial_candidate_parameters("cinematic_soft")
 
         assert clean["white_balance"]["temperature"] != warm["white_balance"]["temperature"]
-        assert warm["color_balance"]["enabled"] is True
-        assert clean["tone_curve"]["curve"] != cinematic["tone_curve"]["curve"]
+        assert clean["tone_curve"]["curve2"] != cinematic["tone_curve"]["curve2"]
         assert cinematic["exposure"]["contrast"] < clean["exposure"]["contrast"]
         assert clean["luminance_curve"]["enabled"] is True
         assert warm["hsv_equalizer"]["enabled"] is True
         assert cinematic["highlight_rolloff"]["enabled"] is True
+        assert "color_balance" not in warm
+        assert "color_balance" not in cinematic
 
     def test_rt_510_disables_artifact_prone_microcontrast(self):
         clean = editorial_candidate_parameters("clean_editorial", rt_version="RawTherapee, version 5.10, command line.")

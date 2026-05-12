@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,7 +20,11 @@ from rawtherapee_mcp.server import (
     batch_preview,
     check_rt_status,
     compare_profiles,
+    create_curation_plan,
+    create_editorial_brief,
+    critique_gate,
     export_multi_device,
+    generate_editorial_candidates,
     get_config,
     get_histogram,
     interpolate_profiles,
@@ -109,6 +114,50 @@ class TestListRawFiles:
 
         result = await list_raw_files(mock_ctx, str(tmp_path))
         assert result["count"] == 2
+
+
+class TestEditorialWorkflowTools:
+    """Tests for opinionated editorial workflow MCP tools."""
+
+    async def test_create_editorial_brief_keys_and_instructions(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await create_editorial_brief(mock_ctx, str(raw_file), style="clean_editorial")
+        assert "error" not in result
+        assert "recommended_workflow" in result
+        assert "llm_instructions" in result
+        assert "Do not flatter mediocre results." in result["llm_instructions"]
+
+    async def test_generate_editorial_candidates_returns_three_distinct_styles(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await generate_editorial_candidates(mock_ctx, str(raw_file), "trip_frame")
+        assert "error" not in result
+        assert len(result["candidates"]) == 3
+
+        style_names = [candidate["style_name"] for candidate in result["candidates"]]
+        assert set(style_names) == {"clean_editorial", "warm_travel", "cinematic_soft"}
+
+        for candidate in result["candidates"]:
+            assert Path(candidate["profile_path"]).is_file()
+
+    async def test_critique_gate_returns_rubric_and_threshold(self, mock_ctx):
+        result = await critique_gate(mock_ctx, candidate_name="warm_v1", intended_style="warm_travel")
+        assert "scoring_rubric" in result
+        assert "minimum_export_threshold" in result
+        assert result["minimum_export_threshold"]["core_score_average_min"] == 7.0
+
+    async def test_create_curation_plan(self, mock_ctx, tmp_path):
+        (tmp_path / "a.cr2").write_bytes(b"raw")
+        (tmp_path / "b.nef").write_bytes(b"raw")
+        (tmp_path / "notes.txt").write_text("ignore")
+
+        result = await create_curation_plan(mock_ctx, str(tmp_path), recursive=False)
+        assert "error" not in result
+        assert result["discovered_file_count"] == 2
+        assert "strong_keeper" in result["rating_categories"]
 
 
 class TestReadExif:

@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/rawtherapee-mcp-server)](https://pypi.org/project/rawtherapee-mcp-server/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for AI-assisted RAW photo development via [RawTherapee](https://rawtherapee.com/) CLI. Provides **49 tools** for profile generation, image processing, visual previews, batch operations, device presets, luminance-based local adjustments, lens correction, film simulation LUTs, profile inheritance, and metadata privacy.
+Cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for AI-assisted RAW photo development via [RawTherapee](https://rawtherapee.com/) CLI. Provides **53 tools** for profile generation, image processing, visual previews, batch operations, device presets, luminance-based local adjustments, lens correction, film simulation LUTs, profile inheritance, metadata privacy, and opinionated editorial workflows.
 
 **What makes it unique:** The LLM can *see* the photos it's editing. Preview tools return inline Base64 images via MCP's ImageContent protocol, creating a visual feedback loop where the AI analyzes the image, adjusts settings, previews the result, and iterates — just like a human editor.
 
@@ -27,7 +27,7 @@ Not all MCP clients handle inline images the same way. The visual feedback loop 
 - Backing LLM supports vision/image analysis (e.g. Claude with vision)
 - Tool response size accommodates ~150KB previews (most clients: 1MB limit)
 
-**Text-only clients:** All 49 tools work without inline images. Preview tools return file paths instead. The LLM can still read EXIF metadata, histogram statistics, generate profiles, batch process, and use luminance presets — the visual feedback loop is the only feature that requires image support.
+**Text-only clients:** All 53 tools work without inline images. Preview tools return file paths instead. The LLM can still read EXIF metadata, histogram statistics, generate profiles, batch process, and use luminance presets — the visual feedback loop is the only feature that requires image support.
 
 ## Prerequisites
 
@@ -396,6 +396,39 @@ After installation and client configuration, try this workflow:
 3. **"The shadows are too dark"** — `add_luminance_adjustment` adds a shadow recovery spot, `preview_with_adjustments` shows the result
 4. **"Export for my phone"** — `process_raw` with `device_preset` crops and processes at the right aspect ratio
 
+## Opinionated Editorial Workflow
+
+These tools do not replace low-level tools like `generate_pp3_profile`, `adjust_profile`, `preview_raw`, or `process_raw`. They add a stricter Lightroom/darktable-lite workflow contract so the LLM plans, creates distinct candidates, critiques, refines, and rejects weak edits when needed.
+
+- The server still relies on the MCP client/LLM to inspect inline previews visually.
+- The tools provide scoring structure and discipline; they do not claim to see the image by themselves.
+- RawTherapee-only limits still apply: no object removal, no true subject-aware masks, no generative retouching.
+- The workflow is designed to reduce user hand-holding and push autonomous critique/refine/reject behavior.
+
+Recommended sequence:
+
+1. `create_editorial_brief`
+2. `generate_editorial_candidates`
+3. `preview_raw` or `preview_before_after`
+4. `critique_gate`
+5. `adjust_profile` (if critique says refine)
+6. Preview again
+7. `process_raw` only if the candidate clears threshold
+
+Example prompts:
+
+Example 1: Single photo autonomous edit
+"Use RawTherapee MCP. Create an editorial brief for this RAW, generate editorial candidates, preview each one, use critique_gate after each preview, refine the best candidate, and export only if it clears the post-worthy threshold. If it cannot be made post-worthy with RawTherapee-only edits, export a proof only and say why."
+
+Example 2: Travel portrait
+"Edit this beach portrait with a warm cinematic coastal mood. Use create_editorial_brief first. Generate clean_editorial, warm_travel, and cinematic_soft candidates. Preview and critique each. Do not export any version where the face is muddy or the skin is orange."
+
+Example 3: Folder curation
+"Scan this folder of RAWs. Do not edit everything. Classify images as reject, proof_only, edit_candidate, or strong_keeper. Only generate candidate edits for strong keepers."
+
+Example 4: Reject weak photos
+"Be critical. If the composition, light, or focus is too weak, say so. Prefer proof_only/reject over pretending the image is professional."
+
 ## Updating
 
 Both installation methods require a two-step procedure. Upgrading the package alone is not enough - Claude Desktop caches the MCP server's tool list. Always follow the full sequence: update package → fully quit Claude Desktop → relaunch.
@@ -460,7 +493,7 @@ Compare against [CHANGELOG.md](CHANGELOG.md). If the version string is correct b
 
 Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/releases) for full changelogs.
 
-## Available Tools (49)
+## Available Tools (53)
 
 ### Discovery & Configuration (5)
 
@@ -471,6 +504,15 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `list_device_presets` | List all device/format crop and resize presets |
 | `list_raw_files` | Scan a directory for supported RAW files |
 | `list_output_files` | List processed output files in the output directory |
+
+### Opinionated Editorial Workflow (4)
+
+| Tool | Description |
+|------|-------------|
+| `create_editorial_brief` | Build a strict editorial brief with critique/reject/export rules |
+| `generate_editorial_candidates` | Generate 3 distinct PP3 candidates (clean_editorial, warm_travel, cinematic_soft) |
+| `critique_gate` | Return the scoring rubric and strict pass/fail contract after preview inspection |
+| `create_curation_plan` | Plan batch curation into reject/proof_only/edit_candidate/strong_keeper before editing |
 
 ### Metadata & Analysis (5)
 

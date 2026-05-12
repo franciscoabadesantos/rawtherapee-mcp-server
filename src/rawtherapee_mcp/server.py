@@ -30,6 +30,15 @@ from rawtherapee_mcp.device_presets import (
     get_preset,
     is_builtin_preset,
 )
+from rawtherapee_mcp.editorial import (
+    build_candidate_descriptor,
+    build_critique_gate,
+    build_curation_plan,
+    build_editorial_brief,
+    editorial_candidate_parameters,
+    ensure_existing_file,
+    safe_slug,
+)
 from rawtherapee_mcp.exif_reader import (
     generate_recommendations,
     get_effective_dimensions,
@@ -467,6 +476,177 @@ async def list_raw_files(
             )
 
     return {"files": found_files, "count": len(found_files), "directory": str(dir_path)}
+
+
+@mcp.tool()
+async def create_editorial_brief(
+    ctx: Context,
+    file_path: str,
+    intent: str | None = None,
+    style: str = "clean_editorial",
+    output_goal: str = "post_worthy",
+) -> dict[str, Any]:
+    """Create a strict, opinionated editing brief for autonomous RAW refinement.
+
+    This is a planning and discipline tool, not an export tool. Use it to force
+    a critique/refine/reject workflow before process_raw is called.
+    Params: file_path, intent, style, output_goal
+    """
+    path = Path(file_path)
+    if not path.is_file():
+        return {"error": f"File not found: {file_path}"}
+
+    exif = read_exif_data(path)
+    metadata: dict[str, Any] = {"effective_dimensions": get_effective_dimensions(path)}
+    if "error" not in exif:
+        metadata["exif"] = exif
+        metadata["recommendations"] = generate_recommendations(exif)
+
+    return build_editorial_brief(
+        str(path),
+        intent=intent,
+        style=style,
+        output_goal=output_goal,
+        metadata=metadata,
+    )
+
+
+@mcp.tool()
+async def generate_editorial_candidates(
+    ctx: Context,
+    file_path: str,
+    base_name: str,
+    style_family: str = "travel_portrait",
+    device_preset: str | None = None,
+) -> dict[str, Any]:
+    """Generate 3 distinct, tasteful editorial PP3 candidates for preview/critique.
+
+    Creates clean_editorial, warm_travel, and cinematic_soft profiles with
+    stronger visible differences. This tool does not render or export.
+    Params: file_path, base_name, style_family, device_preset
+    """
+    config = get_config(ctx)
+    templates_dir = _get_templates_dir()
+
+    try:
+        raw_path = ensure_existing_file(file_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    preset_dict: dict[str, Any] | None = None
+    if device_preset:
+        preset_dict = get_preset(device_preset, config.custom_templates_dir)
+        if preset_dict is None:
+            return {"error": f"Device preset '{device_preset}' not found"}
+
+    source_dimensions: tuple[int, int] = get_effective_dimensions(raw_path)
+    candidate_styles = ("clean_editorial", "warm_travel", "cinematic_soft")
+    candidates: list[dict[str, Any]] = []
+
+    for style_name in candidate_styles:
+        candidate_slug = safe_slug(f"{base_name}_{style_name}")
+        parameters = editorial_candidate_parameters(style_name, style_family)
+
+        try:
+            profile, output_path = _generate_profile(
+                name=candidate_slug,
+                base_template="neutral",
+                parameters=parameters,
+                device_preset=preset_dict,
+                templates_dir=templates_dir,
+                custom_templates_dir=config.custom_templates_dir,
+            )
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+
+        if preset_dict:
+            src_w, src_h = source_dimensions
+            if src_w > 0 and src_h > 0:
+                apply_device_crop(profile, preset_dict, src_w, src_h)
+                profile.save(output_path)
+
+        descriptor = build_candidate_descriptor(style_name)
+        descriptor["profile_path"] = str(output_path)
+        candidates.append(descriptor)
+
+    return {
+        "file_path": str(raw_path),
+        "base_name": base_name,
+        "style_family": style_family,
+        "device_preset": device_preset,
+        "candidates": candidates,
+        "workflow_reminder": (
+            "Preview every candidate before exporting. Use critique_gate after visual inspection. "
+            "Do not export weak candidates."
+        ),
+    }
+
+
+@mcp.tool()
+async def critique_gate(
+    ctx: Context,
+    candidate_name: str,
+    intended_style: str,
+    preview_path: str | None = None,
+) -> dict[str, Any]:
+    """Return a strict post-preview rubric contract for scoring and gating export.
+
+    This tool does not score images itself. The LLM must inspect inline previews,
+    fill the rubric honestly, and follow export/refine/reject rules.
+    Params: preview_path, candidate_name, intended_style
+    """
+    checked_preview_path = preview_path
+    warnings: list[str] = []
+    if preview_path and not Path(preview_path).is_file():
+        warnings.append(f"Preview path not found on disk: {preview_path}")
+        checked_preview_path = preview_path
+
+    result = build_critique_gate(
+        checked_preview_path,
+        candidate_name=candidate_name,
+        intended_style=intended_style,
+    )
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
+@mcp.tool()
+async def create_curation_plan(
+    ctx: Context,
+    directory: str,
+    intent: str | None = None,
+    recursive: bool = False,
+    max_files: int | None = None,
+) -> dict[str, Any]:
+    """Create a selective curation workflow before editing a directory of RAW files.
+
+    Does not edit files. Helps classify photos as reject/proof_only/edit_candidate/
+    strong_keeper so weak images are not forced into final exports.
+    Params: directory, intent, recursive, max_files
+    """
+    _ = get_config(ctx)
+    dir_path = Path(directory)
+    if not dir_path.is_dir():
+        return {"error": f"Directory not found: {directory}"}
+
+    pattern = "**/*" if recursive else "*"
+    discovered: list[str] = []
+    for file_path in sorted(dir_path.glob(pattern)):
+        if file_path.is_file() and file_path.suffix.lower() in RAW_EXTENSIONS:
+            discovered.append(str(file_path))
+            if max_files is not None and len(discovered) >= max_files:
+                break
+
+    plan = build_curation_plan(
+        str(dir_path),
+        intent=intent,
+        recursive=recursive,
+        max_files=max_files,
+        discovered_files=discovered,
+    )
+    plan["sample_files"] = discovered[: min(10, len(discovered))]
+    return plan
 
 
 @mcp.tool()

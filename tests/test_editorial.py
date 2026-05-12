@@ -93,6 +93,14 @@ class TestEditorialCandidateParameters:
         assert warm["hsv_equalizer"]["enabled"] is True
         assert cinematic["highlight_rolloff"]["enabled"] is True
 
+    def test_rt_510_disables_artifact_prone_microcontrast(self):
+        clean = editorial_candidate_parameters("clean_editorial", rt_version="RawTherapee, version 5.10, command line.")
+
+        assert clean["microcontrast"]["enabled"] is False
+        assert "uniformity" not in clean["microcontrast"]
+        assert clean["microcontrast"]["amount"] == 18
+        assert clean["microcontrast"]["contrast"] == 20
+
 
 class TestBuildCritiqueGate:
     """Tests for critique rubric builder."""

@@ -577,6 +577,7 @@ async def generate_editorial_candidates(
     source_dimensions: tuple[int, int] = get_effective_dimensions(raw_path)
     candidate_styles = ("clean_editorial", "warm_travel", "cinematic_soft")
     candidates: list[dict[str, Any]] = []
+    rt_version = await get_rt_version(_require_rt_path(config))
 
     for style_name in candidate_styles:
         candidate_slug = safe_slug(f"{base_name}_{style_name}")
@@ -585,6 +586,7 @@ async def generate_editorial_candidates(
             style_family,
             inferred_intent=inferred_intent,
             style_direction=style_direction,
+            rt_version=rt_version,
         )
 
         try:

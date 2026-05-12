@@ -233,6 +233,45 @@ def _string_list(value: object) -> list[str]:
     return []
 
 
+def _parse_rt_major_minor(rt_version: str | None) -> tuple[int, int] | None:
+    """Extract RawTherapee major/minor version numbers from CLI output."""
+    if not rt_version:
+        return None
+
+    match = re.search(r"(\d+)\.(\d+)", rt_version)
+    if not match:
+        return None
+
+    return int(match.group(1)), int(match.group(2))
+
+
+def _sanitize_microcontrast(
+    parameters: dict[str, Any],
+    *,
+    rt_version: str | None = None,
+) -> dict[str, Any]:
+    """Normalize microcontrast keys and avoid RT 5.10 artifact-prone settings."""
+    section = parameters.get("microcontrast")
+    if not isinstance(section, dict):
+        return parameters
+
+    micro = dict(section)
+    if "strength" in micro and "amount" not in micro:
+        micro["amount"] = micro.pop("strength")
+    micro.setdefault("contrast", 20)
+
+    version = _parse_rt_major_minor(rt_version)
+    if version == (5, 10):
+        # RT 5.10 rendered severe white posterization in previews when
+        # editorial candidates used high SharpenMicro uniformity values.
+        micro["enabled"] = False
+        micro.pop("uniformity", None)
+
+    updated = dict(parameters)
+    updated["microcontrast"] = micro
+    return updated
+
+
 def _resolve_intent_categories(inferred_intent: dict[str, Any] | None, intent: str | None) -> list[str]:
     """Collect and normalize intent categories from multiple optional sources."""
     collected: list[str] = []
@@ -625,9 +664,13 @@ def editorial_candidate_parameters(
     *,
     inferred_intent: dict[str, Any] | None = None,
     style_direction: str | None = None,
+    rt_version: str | None = None,
 ) -> dict[str, Any]:
     """Return candidate parameters for a named editorial style."""
-    base = _STYLE_PARAMETERS.get(style_name, _STYLE_PARAMETERS["clean_editorial"])
+    base = _sanitize_microcontrast(
+        _STYLE_PARAMETERS.get(style_name, _STYLE_PARAMETERS["clean_editorial"]),
+        rt_version=rt_version,
+    )
     advanced_layers: list[dict[str, dict[str, Any]]] = []
 
     if style_name == "clean_editorial":

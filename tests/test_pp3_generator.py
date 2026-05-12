@@ -187,6 +187,18 @@ class TestApplyParameters:
         assert profile.get("Exposure", "HighlightCompr") == "34"
         assert profile.get("Shadows & Highlights", "HighlightTonalWidth") == "72"
 
+    def test_microcontrast_maps_to_rt_keys(self):
+        profile = create_neutral_profile()
+        apply_parameters(
+            profile,
+            {"microcontrast": {"enabled": True, "strength": 18, "contrast_threshold": 20, "uniformity": 5}},
+        )
+        assert profile.get("SharpenMicro", "Enabled") == "true"
+        assert profile.get("SharpenMicro", "Amount") == "18"
+        assert profile.get("SharpenMicro", "Contrast") == "20"
+        assert profile.get("SharpenMicro", "Uniformity") == "5"
+        assert profile.get("SharpenMicro", "Strength", "") == ""
+
     def test_list_values_are_serialized_for_pp3(self):
         profile = create_neutral_profile()
         apply_parameters(profile, {"vibrance": {"psthreshold": [10, 72]}})

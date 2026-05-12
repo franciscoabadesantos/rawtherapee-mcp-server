@@ -162,7 +162,8 @@ class TestEditorialWorkflowTools:
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
 
-        result = await generate_editorial_candidates(mock_ctx, str(raw_file), "trip_frame")
+        with patch("rawtherapee_mcp.server.get_rt_version", return_value="RawTherapee, version 5.10, command line."):
+            result = await generate_editorial_candidates(mock_ctx, str(raw_file), "trip_frame")
         assert "error" not in result
         assert len(result["candidates"]) == 3
 
@@ -190,18 +191,21 @@ class TestEditorialWorkflowTools:
         cinematic_profile = PP3Profile()
         cinematic_profile.load(Path(by_style["cinematic_soft"]["profile_path"]))
         assert cinematic_profile.get("HLRecovery", "Enabled") == "true"
-        assert cinematic_profile.get("SharpenMicro", "Enabled") == "true"
+        assert cinematic_profile.get("SharpenMicro", "Enabled") == "false"
+        assert cinematic_profile.get("SharpenMicro", "Amount", "") == ""
+        assert cinematic_profile.get("SharpenMicro", "Uniformity", "") == ""
 
     async def test_generate_editorial_candidates_still_returns_three_with_inferred_intent(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
 
-        result = await generate_editorial_candidates(
-            mock_ctx,
-            str(raw_file),
-            "trip_frame",
-            inferred_intent={"primary_intent_category": "atmosphere_memory"},
-        )
+        with patch("rawtherapee_mcp.server.get_rt_version", return_value="RawTherapee, version 5.10, command line."):
+            result = await generate_editorial_candidates(
+                mock_ctx,
+                str(raw_file),
+                "trip_frame",
+                inferred_intent={"primary_intent_category": "atmosphere_memory"},
+            )
         assert "error" not in result
         assert len(result["candidates"]) == 3
 

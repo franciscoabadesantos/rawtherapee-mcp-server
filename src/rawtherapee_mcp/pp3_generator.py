@@ -226,7 +226,11 @@ _PARAMETER_MAP: dict[str, dict[str, tuple[str, str]]] = {
     },
     "microcontrast": {
         "enabled": ("SharpenMicro", "Enabled"),
-        "strength": ("SharpenMicro", "Strength"),
+        "amount": ("SharpenMicro", "Amount"),
+        "strength": ("SharpenMicro", "Amount"),
+        "contrast": ("SharpenMicro", "Contrast"),
+        "contrast_threshold": ("SharpenMicro", "Contrast"),
+        "contrastthreshold": ("SharpenMicro", "Contrast"),
         "uniformity": ("SharpenMicro", "Uniformity"),
         "matrix": ("SharpenMicro", "Matrix"),
     },

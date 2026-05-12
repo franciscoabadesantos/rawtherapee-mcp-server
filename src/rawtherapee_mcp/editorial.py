@@ -6,6 +6,19 @@ import re
 from pathlib import Path
 from typing import Any
 
+from rawtherapee_mcp.advanced_color import (
+    cinematic_soft_color_separation,
+    clean_midtone_contrast,
+    clean_sky_blue,
+    gentle_s_curve,
+    merge_parameter_sets,
+    natural_green_control,
+    protect_skin_reduce_orange,
+    reduce_green_gray_cast,
+    soft_highlight_rolloff,
+    warm_sand_preserve_skin,
+)
+
 SUPPORTED_EDITORIAL_STYLES = (
     "clean_editorial",
     "warm_travel",
@@ -61,46 +74,52 @@ _STYLE_PRIORITIES: dict[str, list[str]] = {
 _STYLE_PARAMETERS: dict[str, dict[str, Any]] = {
     "clean_editorial": {
         "exposure": {
-            "compensation": 0.35,
+            "compensation": 0.3,
             "contrast": 12,
-            "saturation": 6,
-            "highlight_compression": 18,
+            "saturation": 2,
+            "highlight_compression": 20,
             "black": -2,
         },
         "white_balance": {"method": "Camera", "temperature": 5600, "green": 1.0},
         "sharpening": {"enabled": True, "radius": 0.5, "amount": 140},
         "noise_reduction": {"enabled": True, "luminance": 10, "chrominance": 10},
+        "vibrance": {"enabled": True, "pastels": 10, "saturated": 4, "protectskins": True, "avoidcolorshift": True},
+        "microcontrast": {"enabled": True, "strength": 18, "uniformity": 55},
     },
     "warm_travel": {
         "exposure": {
             "compensation": 0.45,
-            "contrast": 16,
-            "saturation": 11,
-            "highlight_compression": 22,
+            "contrast": 14,
+            "saturation": 4,
+            "highlight_compression": 26,
             "black": -3,
         },
-        "white_balance": {"method": "Custom", "temperature": 6150, "green": 0.98},
+        "white_balance": {"method": "Custom", "temperature": 6000, "green": 0.99},
         "sharpening": {"enabled": True, "radius": 0.55, "amount": 145},
         "noise_reduction": {"enabled": True, "luminance": 12, "chrominance": 12},
+        "vibrance": {"enabled": True, "pastels": 12, "saturated": 7, "protectskins": True, "avoidcolorshift": True},
+        "microcontrast": {"enabled": True, "strength": 20, "uniformity": 54},
     },
     "cinematic_soft": {
         "exposure": {
             "compensation": 0.25,
-            "contrast": -6,
-            "saturation": -8,
-            "highlight_compression": 30,
-            "black": -6,
+            "contrast": -4,
+            "saturation": -4,
+            "highlight_compression": 34,
+            "black": -4,
         },
         "white_balance": {"method": "Custom", "temperature": 5400, "green": 1.02},
         "sharpening": {"enabled": True, "radius": 0.45, "amount": 110},
         "noise_reduction": {"enabled": True, "luminance": 14, "chrominance": 14},
+        "vibrance": {"enabled": True, "pastels": 4, "saturated": -2, "protectskins": True, "avoidcolorshift": True},
+        "microcontrast": {"enabled": True, "strength": 15, "uniformity": 58},
     },
 }
 
 _CANDIDATE_EFFECTS: dict[str, str] = {
-    "clean_editorial": "Balanced natural edit with clear subject separation and moderate contrast.",
-    "warm_travel": "Warmer, richer travel mood with lively but controlled color.",
-    "cinematic_soft": "Soft atmospheric mood with lower contrast and restrained saturation.",
+    "clean_editorial": "Balanced natural edit with gentle S-curve, clean tonal separation, and restrained color.",
+    "warm_travel": "Warmer travel mood with highlight/shadow color separation and controlled greens/blues.",
+    "cinematic_soft": "Soft cinematic mood with lifted blacks, rolled highlights, and subtle warm/cool split.",
 }
 
 _CANDIDATE_RISKS: dict[str, list[str]] = {
@@ -235,22 +254,78 @@ def build_editorial_brief(
 def editorial_candidate_parameters(style_name: str, style_family: str = "travel_portrait") -> dict[str, Any]:
     """Return candidate parameters for a named editorial style."""
     base = _STYLE_PARAMETERS.get(style_name, _STYLE_PARAMETERS["clean_editorial"])
+    advanced_layers: list[dict[str, dict[str, Any]]] = []
+
+    if style_name == "clean_editorial":
+        advanced_layers = [
+            gentle_s_curve(),
+            clean_midtone_contrast(),
+            reduce_green_gray_cast(),
+            protect_skin_reduce_orange(),
+            {
+                "luminance_curve": {
+                    "enabled": True,
+                    "avoid_color_shift": True,
+                    "red_skin_protection": 16,
+                }
+            },
+        ]
+    elif style_name == "warm_travel":
+        advanced_layers = [
+            gentle_s_curve(),
+            warm_sand_preserve_skin(),
+            soft_highlight_rolloff(),
+            clean_sky_blue(),
+            natural_green_control(),
+            {
+                "color_balance": {
+                    "enabled": True,
+                    "strength": 36,
+                    "highlights_color_saturation": [62, 82],
+                    "shadows_color_saturation": [74, 196],
+                }
+            },
+        ]
+    elif style_name == "cinematic_soft":
+        advanced_layers = [
+            cinematic_soft_color_separation(),
+            reduce_green_gray_cast(),
+            {
+                "tone_curve": {"curve_mode2": "Standard", "curve2": "3;0;0.10;0.20;0.22;0.55;0.58;1;0.94;"},
+                "luminance_curve": {
+                    "enabled": True,
+                    "contrast": -3,
+                    "avoid_color_shift": True,
+                    "lh_curve": "3;0;0;0.35;0.38;0.78;0.66;1;1;",
+                    "hh_curve": "3;0;0;0.65;0.70;0.88;0.82;1;0.92;",
+                },
+            },
+        ]
+
+    combined = merge_parameter_sets(base, *advanced_layers)
 
     # Backlit/portrait-heavy families need stronger subject lift to avoid muddy faces.
     if style_family in {"travel_portrait", "portrait", "backlit_portrait"}:
-        exposure_section = base.get("exposure")
+        exposure_section = combined.get("exposure")
         exposure_values = exposure_section if isinstance(exposure_section, dict) else {}
+        luminance_section = combined.get("luminance_curve")
+        luminance_values = luminance_section if isinstance(luminance_section, dict) else {}
         adjusted = {
-            **base,
+            **combined,
             "exposure": {
                 **exposure_values,
                 "compensation": float(exposure_values.get("compensation", 0.0)) + 0.15,
                 "highlight_compression": int(exposure_values.get("highlight_compression", 20)) + 4,
             },
+            "luminance_curve": {
+                **luminance_values,
+                "enabled": True,
+                "contrast": 10 if style_name != "cinematic_soft" else 2,
+            },
         }
         return adjusted
 
-    return base
+    return combined
 
 
 def build_candidate_descriptor(style_name: str) -> dict[str, Any]:
@@ -278,7 +353,15 @@ def build_critique_gate(
         "subject_separation_score": "0-10",
         "face_or_subject_exposure_score": "0-10",
         "composition_or_crop_score": "0-10",
+        "tonal_separation_score": "0-10",
+        "curve_quality_highlight_rolloff_score": "0-10",
+        "skin_orange_control_score": "0-10",
+        "green_grass_control_score": "0-10",
+        "sky_blue_control_score": "0-10",
         "color_cast_score": "0-10",
+        "phone_filter_penalty": "0-10",
+        "muddy_shadows_penalty": "0-10",
+        "basic_adjustment_penalty": "0-10",
         "mood_match_score": "0-10",
         "professional_polish_score": "0-10",
         "overprocessing_penalty": "0-10",
@@ -299,19 +382,27 @@ def build_critique_gate(
         "automatic_failure_conditions": [
             "Subject/face is still too dark or muddy.",
             "Colors look fake (orange skin, gray/green cast, oversaturated filter look).",
+            "Grass/foliage is neon or skies look synthetic/cyan-heavy.",
             "Crop worsens composition or removes critical context.",
             "Edit feels barely different from original while output goal is post_worthy.",
+            "Edit only shifts exposure/warmth/saturation without tonal/color separation.",
             "Sharpening/contrast artifacts look crunchy or fake HDR.",
         ],
         "required_llm_answers": [
             "What is the single biggest flaw in this candidate?",
             "Is the difference from original clearly visible at thumbnail size?",
+            "What curve/color-separation decisions are visible (or missing)?",
+            "Does this look like a basic phone filter? Why or why not?",
             "Does this candidate pass export threshold? If not, why exactly?",
             "What precise adjustment should be applied next (or reject/proof_only)?",
         ],
         "next_action_rules": [
+            "If the edit only changes exposure/warmth/saturation and still looks basic, mark refine.",
             "If subject/face is still too dark or muddy, do not export final.",
             "If edit is only slightly different and output_goal is post_worthy, verdict must be refine.",
+            "If skin is orange or grass is neon, do not export.",
+            "If cinematic_soft becomes gray/green and flat, mark refine or reject.",
+            "If tonal separation is weak, refine using curves or color-balance tools before export.",
             "If crop makes composition worse, revert crop or try another crop.",
             "If colors look fake, reduce saturation/warmth and refine.",
             "If image cannot become post-worthy with RawTherapee-only edits, mark proof_only or reject.",
@@ -323,6 +414,9 @@ def build_critique_gate(
             "priority_order": [
                 "fix_subject_exposure",
                 "neutralize_color_cast",
+                "build_tonal_separation_with_curves",
+                "separate_warm_cool_color_balance",
+                "protect_skin_and_tame_greens_blues",
                 "repair_crop_or_composition",
                 "refine_contrast_saturation_sharpening",
             ],

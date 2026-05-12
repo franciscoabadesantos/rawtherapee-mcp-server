@@ -192,7 +192,8 @@ class TestEditorialWorkflowTools:
         cinematic_profile.load(Path(by_style["cinematic_soft"]["profile_path"]))
         assert cinematic_profile.get("HLRecovery", "Enabled") == "true"
         assert cinematic_profile.get("SharpenMicro", "Enabled") == "false"
-        assert cinematic_profile.get("SharpenMicro", "Amount", "") == ""
+        assert cinematic_profile.get("SharpenMicro", "Amount") == "15"
+        assert cinematic_profile.get("SharpenMicro", "Contrast") == "20"
         assert cinematic_profile.get("SharpenMicro", "Uniformity", "") == ""
 
     async def test_generate_editorial_candidates_still_returns_three_with_inferred_intent(self, mock_ctx, tmp_path):

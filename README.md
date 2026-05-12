@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/rawtherapee-mcp-server)](https://pypi.org/project/rawtherapee-mcp-server/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for AI-assisted RAW photo development via [RawTherapee](https://rawtherapee.com/) CLI. Provides **53 tools** for profile generation, image processing, visual previews, batch operations, device presets, luminance-based local adjustments, lens correction, film simulation LUTs, profile inheritance, metadata privacy, and opinionated editorial workflows.
+Cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for AI-assisted RAW photo development via [RawTherapee](https://rawtherapee.com/) CLI. Provides **54 tools** for profile generation, image processing, visual previews, batch operations, device presets, luminance-based local adjustments, lens correction, film simulation LUTs, profile inheritance, metadata privacy, and opinionated editorial workflows.
 
 **What makes it unique:** The LLM can *see* the photos it's editing. Preview tools return inline Base64 images via MCP's ImageContent protocol, creating a visual feedback loop where the AI analyzes the image, adjusts settings, previews the result, and iterates — just like a human editor.
 
@@ -27,7 +27,7 @@ Not all MCP clients handle inline images the same way. The visual feedback loop 
 - Backing LLM supports vision/image analysis (e.g. Claude with vision)
 - Tool response size accommodates ~150KB previews (most clients: 1MB limit)
 
-**Text-only clients:** All 53 tools work without inline images. Preview tools return file paths instead. The LLM can still read EXIF metadata, histogram statistics, generate profiles, batch process, and use luminance presets — the visual feedback loop is the only feature that requires image support.
+**Text-only clients:** All 54 tools work without inline images. Preview tools return file paths instead. The LLM can still read EXIF metadata, histogram statistics, generate profiles, batch process, and use luminance presets — the visual feedback loop is the only feature that requires image support.
 
 ## Prerequisites
 
@@ -407,13 +407,15 @@ These tools do not replace low-level tools like `generate_pp3_profile`, `adjust_
 
 Recommended sequence:
 
-1. `create_editorial_brief`
-2. `generate_editorial_candidates`
-3. `preview_raw` or `preview_before_after`
-4. `critique_gate`
-5. `adjust_profile` (if critique says refine)
-6. Preview again
-7. `process_raw` only if the candidate clears threshold
+1. `preview_raw`
+2. `infer_photo_intent`
+3. `create_editorial_brief`
+4. `generate_editorial_candidates`
+5. `preview_raw` or `preview_before_after`
+6. `critique_gate`
+7. `adjust_profile` (if critique says refine)
+8. Preview again
+9. `process_raw` only if the candidate clears threshold
 
 Example prompts:
 
@@ -442,6 +444,26 @@ Editorial candidates now use richer tone/color controls where RawTherapee PP3 su
 - Extended vibrance controls (`ProtectSkins`, `AvoidColorShift`, threshold curves)
 
 RawTherapee-only limits still apply: no generative retouching, no object removal, and no true semantic subject masks.
+
+### Intent-Aware Editorial Workflow
+
+Before editing, the agent should infer why the photo was taken and what visual/emotional payoff must be preserved. The same technical trait can be either a flaw or an intentional part of the image depending on intent.
+
+- Sunset silhouette / atmosphere memory: preserve low-light warmth and partial silhouette; do not force bright portrait standards.
+- Studio portrait / clean portrait: prioritize subject clarity and skin fidelity; muddy face is usually a serious failure.
+- Rain mood: keep melancholy unless scene reads as neon/nightlife.
+- Event documentary: preserve moment authenticity even when lighting is imperfect.
+- Travel/place vibe: keep location ambience and context; avoid over-cleaning the scene.
+
+Recommended intent-aware sequence:
+
+1. `preview_raw`
+2. `infer_photo_intent`
+3. `create_editorial_brief` with `inferred_intent`
+4. `generate_editorial_candidates`
+5. Preview candidates
+6. `critique_gate` with `inferred_intent` / `critique_standard`
+7. refine/export/proof/reject
 
 ## Updating
 
@@ -507,7 +529,7 @@ Compare against [CHANGELOG.md](CHANGELOG.md). If the version string is correct b
 
 Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/releases) for full changelogs.
 
-## Available Tools (53)
+## Available Tools (54)
 
 ### Discovery & Configuration (5)
 
@@ -519,10 +541,11 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `list_raw_files` | Scan a directory for supported RAW files |
 | `list_output_files` | List processed output files in the output directory |
 
-### Opinionated Editorial Workflow (4)
+### Opinionated Editorial Workflow (5)
 
 | Tool | Description |
 |------|-------------|
+| `infer_photo_intent` | Build a structured intent-inference contract before editing (LLM fills after preview inspection) |
 | `create_editorial_brief` | Build a strict editorial brief with critique/reject/export rules |
 | `generate_editorial_candidates` | Generate 3 distinct PP3 candidates (clean_editorial, warm_travel, cinematic_soft) |
 | `critique_gate` | Return the scoring rubric and strict pass/fail contract after preview inspection |

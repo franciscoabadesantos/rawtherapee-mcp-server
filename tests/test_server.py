@@ -27,6 +27,7 @@ from rawtherapee_mcp.server import (
     generate_editorial_candidates,
     get_config,
     get_histogram,
+    infer_photo_intent,
     interpolate_profiles,
     list_local_adjustments,
     list_raw_files,
@@ -119,6 +120,22 @@ class TestListRawFiles:
 class TestEditorialWorkflowTools:
     """Tests for opinionated editorial workflow MCP tools."""
 
+    async def test_infer_photo_intent_returns_contract(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await infer_photo_intent(
+            mock_ctx,
+            str(raw_file),
+            user_intent="sunset ambience",
+            context_hint="beach frame with dark subject",
+        )
+        assert "error" not in result
+        assert result["file_path"] == str(raw_file)
+        assert "required_visual_questions" in result
+        assert "likely_intent_categories" in result
+        assert "sunset_silhouette" in result["likely_intent_categories"]
+
     async def test_create_editorial_brief_keys_and_instructions(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
@@ -128,6 +145,18 @@ class TestEditorialWorkflowTools:
         assert "recommended_workflow" in result
         assert "llm_instructions" in result
         assert "Do not flatter mediocre results." in result["llm_instructions"]
+
+    async def test_create_editorial_brief_accepts_inferred_intent(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await create_editorial_brief(
+            mock_ctx,
+            str(raw_file),
+            inferred_intent={"primary_intent_category": "sunset_silhouette"},
+        )
+        assert "error" not in result
+        assert result["intent_standard"]["primary_intent_category"] == "sunset_silhouette"
 
     async def test_generate_editorial_candidates_returns_three_distinct_styles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
@@ -163,11 +192,28 @@ class TestEditorialWorkflowTools:
         assert cinematic_profile.get("HLRecovery", "Enabled") == "true"
         assert cinematic_profile.get("SharpenMicro", "Enabled") == "true"
 
+    async def test_generate_editorial_candidates_still_returns_three_with_inferred_intent(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await generate_editorial_candidates(
+            mock_ctx,
+            str(raw_file),
+            "trip_frame",
+            inferred_intent={"primary_intent_category": "atmosphere_memory"},
+        )
+        assert "error" not in result
+        assert len(result["candidates"]) == 3
+
     async def test_critique_gate_returns_rubric_and_threshold(self, mock_ctx):
         result = await critique_gate(mock_ctx, candidate_name="warm_v1", intended_style="warm_travel")
         assert "scoring_rubric" in result
         assert "minimum_export_threshold" in result
         assert "tonal_separation_score" in result["scoring_rubric"]
+        assert "intent_alignment_score" in result["scoring_rubric"]
+        assert "preserved_scene_value_score" in result["scoring_rubric"]
+        assert "harmful_overcorrection_penalty" in result["scoring_rubric"]
+        assert "wrong_standard_warning" in result["scoring_rubric"]
         assert any("only changes exposure/warmth/saturation" in r for r in result["next_action_rules"])
         assert result["minimum_export_threshold"]["core_score_average_min"] == 7.0
 

@@ -35,6 +35,7 @@ from rawtherapee_mcp.editorial import (
     build_critique_gate,
     build_curation_plan,
     build_editorial_brief,
+    build_intent_inference_contract,
     editorial_candidate_parameters,
     ensure_existing_file,
     safe_slug,
@@ -479,10 +480,39 @@ async def list_raw_files(
 
 
 @mcp.tool()
+async def infer_photo_intent(
+    ctx: Context,
+    file_path: str,
+    user_intent: str | None = None,
+    context_hint: str | None = None,
+) -> dict[str, Any]:
+    """Build a structured intent-inference contract before editorial editing.
+
+    This tool does not perform computer vision. The LLM must inspect preview
+    output and fill this contract honestly. If the image was not previewed yet,
+    run preview_raw first.
+    Params: file_path, user_intent, context_hint
+    """
+    _ = get_config(ctx)
+    try:
+        raw_path = ensure_existing_file(file_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    return build_intent_inference_contract(
+        str(raw_path),
+        user_intent=user_intent,
+        context_hint=context_hint,
+    )
+
+
+@mcp.tool()
 async def create_editorial_brief(
     ctx: Context,
     file_path: str,
     intent: str | None = None,
+    inferred_intent: dict[str, Any] | None = None,
+    intent_profile: dict[str, Any] | None = None,
     style: str = "clean_editorial",
     output_goal: str = "post_worthy",
 ) -> dict[str, Any]:
@@ -502,11 +532,14 @@ async def create_editorial_brief(
         metadata["exif"] = exif
         metadata["recommendations"] = generate_recommendations(exif)
 
+    resolved_intent_profile = intent_profile if intent_profile is not None else inferred_intent
+
     return build_editorial_brief(
         str(path),
         intent=intent,
         style=style,
         output_goal=output_goal,
+        inferred_intent=resolved_intent_profile,
         metadata=metadata,
     )
 
@@ -518,6 +551,8 @@ async def generate_editorial_candidates(
     base_name: str,
     style_family: str = "travel_portrait",
     device_preset: str | None = None,
+    inferred_intent: dict[str, Any] | None = None,
+    style_direction: str | None = None,
 ) -> dict[str, Any]:
     """Generate 3 distinct, tasteful editorial PP3 candidates for preview/critique.
 
@@ -545,7 +580,12 @@ async def generate_editorial_candidates(
 
     for style_name in candidate_styles:
         candidate_slug = safe_slug(f"{base_name}_{style_name}")
-        parameters = editorial_candidate_parameters(style_name, style_family)
+        parameters = editorial_candidate_parameters(
+            style_name,
+            style_family,
+            inferred_intent=inferred_intent,
+            style_direction=style_direction,
+        )
 
         try:
             profile, output_path = _generate_profile(
@@ -574,6 +614,8 @@ async def generate_editorial_candidates(
         "base_name": base_name,
         "style_family": style_family,
         "device_preset": device_preset,
+        "inferred_intent": inferred_intent,
+        "style_direction": style_direction,
         "candidates": candidates,
         "workflow_reminder": (
             "Preview every candidate before exporting. Use critique_gate after visual inspection. "
@@ -588,6 +630,8 @@ async def critique_gate(
     candidate_name: str,
     intended_style: str,
     preview_path: str | None = None,
+    inferred_intent: dict[str, Any] | None = None,
+    critique_standard: dict[str, Any] | str | None = None,
 ) -> dict[str, Any]:
     """Return a strict post-preview rubric contract for scoring and gating export.
 
@@ -605,6 +649,8 @@ async def critique_gate(
         checked_preview_path,
         candidate_name=candidate_name,
         intended_style=intended_style,
+        inferred_intent=inferred_intent,
+        critique_standard=critique_standard,
     )
     if warnings:
         result["warnings"] = warnings

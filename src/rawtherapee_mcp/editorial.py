@@ -82,7 +82,7 @@ _STYLE_PARAMETERS: dict[str, dict[str, Any]] = {
         "sharpening": {"enabled": True, "radius": 0.5, "amount": 140},
         "noise_reduction": {"enabled": True, "luminance": 10, "chrominance": 10},
         "vibrance": {"enabled": True, "pastels": 10, "saturated": 4, "protectskins": True, "avoidcolorshift": True},
-        "microcontrast": {"enabled": True, "strength": 18, "uniformity": 55},
+        "microcontrast": {"enabled": True, "strength": 18},
     },
     "warm_travel": {
         "exposure": {
@@ -96,7 +96,7 @@ _STYLE_PARAMETERS: dict[str, dict[str, Any]] = {
         "sharpening": {"enabled": True, "radius": 0.55, "amount": 145},
         "noise_reduction": {"enabled": True, "luminance": 12, "chrominance": 12},
         "vibrance": {"enabled": True, "pastels": 12, "saturated": 7, "protectskins": True, "avoidcolorshift": True},
-        "microcontrast": {"enabled": True, "strength": 20, "uniformity": 54},
+        "microcontrast": {"enabled": True, "strength": 20},
     },
     "cinematic_soft": {
         "exposure": {
@@ -110,7 +110,7 @@ _STYLE_PARAMETERS: dict[str, dict[str, Any]] = {
         "sharpening": {"enabled": True, "radius": 0.45, "amount": 110},
         "noise_reduction": {"enabled": True, "luminance": 14, "chrominance": 14},
         "vibrance": {"enabled": True, "pastels": 4, "saturated": -2, "protectskins": True, "avoidcolorshift": True},
-        "microcontrast": {"enabled": True, "strength": 15, "uniformity": 58},
+        "microcontrast": {"enabled": True, "strength": 15},
     },
 }
 

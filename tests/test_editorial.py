@@ -93,6 +93,9 @@ class TestEditorialCandidateParameters:
         assert cinematic["highlight_rolloff"]["enabled"] is True
         assert "color_balance" not in warm
         assert "color_balance" not in cinematic
+        assert "uniformity" not in clean["microcontrast"]
+        assert "uniformity" not in warm["microcontrast"]
+        assert "uniformity" not in cinematic["microcontrast"]
 
     def test_rt_510_disables_artifact_prone_microcontrast(self):
         clean = editorial_candidate_parameters("clean_editorial", rt_version="RawTherapee, version 5.10, command line.")

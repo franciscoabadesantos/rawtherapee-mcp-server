@@ -10,6 +10,7 @@ from rawtherapee_mcp.pp3_generator import (
     apply_parameters,
     create_neutral_profile,
     generate_profile,
+    sanitize_autonomous_parameters,
 )
 
 
@@ -265,6 +266,36 @@ class TestApplyParameters:
         assert profile.get("Exposure", "Compensation") == "1.5"
         assert profile.get("Crop", "W") == "3108"
         assert profile.get("Crop", "H") == "6732"
+
+
+class TestSanitizeAutonomousParameters:
+    def test_removes_unsafe_colortoning_and_uniformity(self):
+        sanitized, notes = sanitize_autonomous_parameters(
+            {
+                "color_balance": {"enabled": True, "method": "Lab", "strength": 42},
+                "split_toning": {"enabled": True, "strength": 55},
+                "microcontrast": {"enabled": True, "strength": 30, "uniformity": 70},
+            }
+        )
+        assert "color_balance" not in sanitized
+        assert "split_toning" not in sanitized
+        assert sanitized["microcontrast"]["strength"] == 20
+        assert "uniformity" not in sanitized["microcontrast"]
+        assert any("ColorToning" in note for note in notes)
+
+    def test_clamps_aggressive_sharpening_local_contrast(self):
+        sanitized, _ = sanitize_autonomous_parameters(
+            {
+                "sharpening": {"amount": 300, "radius": 2.4},
+                "local_contrast": {"amount": 55, "radius": 200},
+                "exposure": {"contrast": 120},
+            }
+        )
+        assert sanitized["sharpening"]["amount"] == 180
+        assert sanitized["sharpening"]["radius"] == 1.6
+        assert sanitized["local_contrast"]["amount"] == 20
+        assert sanitized["local_contrast"]["radius"] == 120
+        assert sanitized["exposure"]["contrast"] == 30
 
 
 class TestApplyDevicePreset:

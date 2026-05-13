@@ -141,6 +141,13 @@ class TestBuildCritiqueGate:
         assert "intent_alignment_score" in rubric
         assert "preserved_scene_value_score" in rubric
         assert "harmful_overcorrection_penalty" in rubric
+        assert "visual_anchor_score" in rubric
+        assert "emotional_goal_score" in rubric
+        assert "preservation_score" in rubric
+        assert "distraction_control_score" in rubric
+        assert "generic_preset_penalty" in rubric
+        assert "vision_alignment_score" in rubric
+        assert "artifact_penalty" in rubric
         assert "wrong_standard_warning" in rubric
         assert "post_worthy_verdict" in rubric
 
@@ -148,6 +155,20 @@ class TestBuildCritiqueGate:
         assert threshold["core_score_average_min"] == 7.0
         assert threshold["overprocessing_penalty_max"] == 3
         assert any("only changes exposure/warmth/saturation" in rule for rule in gate["next_action_rules"])
+
+    def test_includes_vision_alignment_rules_when_editing_vision_is_present(self):
+        gate = build_critique_gate(
+            "preview.jpg",
+            candidate_name="cand1",
+            intended_style="warm_travel",
+            editing_vision={
+                "emotional_goal": "quiet warmth",
+                "visual_anchor": "face + backlight",
+                "editing_moves": ["emphasize_subject"],
+            },
+        )
+        assert gate["editing_vision"]["visual_anchor"] == "face + backlight"
+        assert any("visual anchor" in answer.lower() for answer in gate["required_llm_answers"])
 
     def test_sunset_intent_does_not_force_dark_subject_as_automatic_failure(self):
         gate = build_critique_gate(

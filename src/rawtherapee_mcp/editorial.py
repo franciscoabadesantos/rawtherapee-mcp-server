@@ -857,6 +857,13 @@ def build_critique_gate(
         "generic_preset_penalty": "0-10",
         "vision_alignment_score": "0-10",
         "harmful_overcorrection_penalty": "0-10",
+        "visual_anchor_score": "0-10",
+        "emotional_goal_score": "0-10",
+        "preservation_score": "0-10",
+        "distraction_control_score": "0-10",
+        "generic_preset_penalty": "0-10",
+        "vision_alignment_score": "0-10",
+        "artifact_penalty": "0-10",
         "wrong_standard_warning": "true|false with one-sentence reason",
         "overprocessing_penalty": "0-10",
         "post_worthy_verdict": "export | refine | proof_only | reject",
@@ -895,6 +902,7 @@ def build_critique_gate(
         "If wrong_standard_warning is true, revise critique standard before final verdict.",
         "If harmful_overcorrection_penalty is high, revert toward scene-authentic values.",
         "If the edit removes the visual reason this photo exists, mark refine or reject.",
+        "If artifacts appear (posterization, halos, contour speckling), mark refine or reject.",
     ]
     if subject_priority == "critical":
         next_action_rules.insert(1, "If subject/face is still too dark or muddy, do not export final.")
@@ -902,6 +910,24 @@ def build_critique_gate(
         next_action_rules.insert(
             1,
             "Do not force bright portrait exposure when ambience/silhouette intent is primary.",
+        )
+
+    vision_questions = [
+        "Did this edit serve the visual anchor?",
+        "Did this preserve the emotional goal?",
+        "What preservation target was protected most clearly?",
+        "What distraction was reduced or still unresolved?",
+        "Does this look like a generic preset or an image-specific edit?",
+        "Were any artifacts introduced?",
+    ]
+
+    if editing_vision:
+        next_action_rules.extend(
+            [
+                "Prioritize alignment to visual_anchor over generic style labels.",
+                "If emotional goal is not visible, verdict cannot be export.",
+                "If preserve targets were compromised, revert and refine before export.",
+            ]
         )
 
     return {
@@ -935,6 +961,7 @@ def build_critique_gate(
             "Did any correction remove the reason the photo works?",
             "Does this candidate pass export threshold? If not, why exactly?",
             "What precise adjustment should be applied next (or reject/proof_only)?",
+            *vision_questions,
         ],
         "next_action_rules": next_action_rules,
         "adjustment_guidance": {

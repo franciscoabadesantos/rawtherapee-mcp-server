@@ -7,6 +7,7 @@ and generates complete profiles from templates or neutral defaults.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -268,6 +269,118 @@ _PARAMETER_MAP: dict[str, dict[str, tuple[str, str]]] = {
         "strength": ("Film Simulation", "Strength"),
     },
 }
+
+
+def _clamp_numeric(value: Any, *, minimum: float | None = None, maximum: float | None = None) -> Any:
+    """Clamp a numeric value while preserving non-numeric inputs."""
+    if isinstance(value, bool):
+        return value
+    if not isinstance(value, (int, float)):
+        return value
+
+    output = float(value)
+    if minimum is not None:
+        output = max(minimum, output)
+    if maximum is not None:
+        output = min(maximum, output)
+
+    if isinstance(value, int):
+        return int(round(output))
+    return output
+
+
+def sanitize_autonomous_parameters(
+    parameters: dict[str, Any],
+    *,
+    allow_color_toning: bool = False,
+) -> tuple[dict[str, Any], list[str]]:
+    """Sanitize autonomous/editorial parameter dictionaries before PP3 output.
+
+    This guardrail intentionally targets known unstable or artifact-prone
+    controls for autonomous generation, while preserving low-level manual APIs.
+    """
+    sanitized: dict[str, Any] = deepcopy(parameters)
+    applied: list[str] = []
+
+    # Block autonomous split-toning / color toning unless explicitly enabled.
+    for blocked_group in ("color_balance", "split_toning"):
+        if blocked_group in sanitized and not allow_color_toning:
+            sanitized.pop(blocked_group, None)
+            applied.append(f"Removed '{blocked_group}' (autonomous ColorToning disabled)")
+
+    # Always drop artifact-prone microcontrast uniformity.
+    microcontrast = sanitized.get("microcontrast")
+    if isinstance(microcontrast, dict) and "uniformity" in microcontrast:
+        microcontrast.pop("uniformity", None)
+        applied.append("Removed 'microcontrast.uniformity' (known artifact risk)")
+
+    # If color toning is ever enabled in future modes, block known unstable Lab method.
+    color_balance = sanitized.get("color_balance")
+    if isinstance(color_balance, dict):
+        method = color_balance.get("method")
+        if isinstance(method, str) and method.lower() == "lab":
+            color_balance.pop("method", None)
+            applied.append("Removed 'color_balance.method=Lab' (known unstable mode)")
+
+    # Remove potentially dangerous preview/mask toggles from ad-hoc raw payloads.
+    for group_name, group_values in list(sanitized.items()):
+        if not isinstance(group_values, dict):
+            continue
+        if "locallab" in group_name.lower():
+            sanitized.pop(group_name, None)
+            applied.append(f"Removed '{group_name}' (aggressive local/mask controls disabled)")
+            continue
+
+        for key_name in list(group_values):
+            normalized = key_name.lower()
+            if any(token in normalized for token in ("preview", "showmask", "show_mask", "mask")):
+                group_values.pop(key_name, None)
+                applied.append(f"Removed '{group_name}.{key_name}' (preview/mask control disabled)")
+
+    # Clamp overly aggressive detail/contrast settings.
+    sharpening = sanitized.get("sharpening")
+    if isinstance(sharpening, dict):
+        amount = sharpening.get("amount")
+        clamped_amount = _clamp_numeric(amount, minimum=0, maximum=180)
+        if clamped_amount != amount:
+            sharpening["amount"] = clamped_amount
+            applied.append("Clamped 'sharpening.amount' to <= 180")
+        radius = sharpening.get("radius")
+        clamped_radius = _clamp_numeric(radius, minimum=0.3, maximum=1.6)
+        if clamped_radius != radius:
+            sharpening["radius"] = clamped_radius
+            applied.append("Clamped 'sharpening.radius' to 0.3..1.6")
+
+    microcontrast_after = sanitized.get("microcontrast")
+    if isinstance(microcontrast_after, dict):
+        strength = microcontrast_after.get("strength")
+        clamped_strength = _clamp_numeric(strength, minimum=0, maximum=20)
+        if clamped_strength != strength:
+            microcontrast_after["strength"] = clamped_strength
+            applied.append("Clamped 'microcontrast.strength' to <= 20")
+
+    local_contrast = sanitized.get("local_contrast")
+    if isinstance(local_contrast, dict):
+        amount = local_contrast.get("amount")
+        clamped_amount = _clamp_numeric(amount, minimum=0, maximum=20)
+        if clamped_amount != amount:
+            local_contrast["amount"] = clamped_amount
+            applied.append("Clamped 'local_contrast.amount' to <= 20")
+        radius = local_contrast.get("radius")
+        clamped_radius = _clamp_numeric(radius, minimum=5, maximum=120)
+        if clamped_radius != radius:
+            local_contrast["radius"] = clamped_radius
+            applied.append("Clamped 'local_contrast.radius' to <= 120")
+
+    exposure = sanitized.get("exposure")
+    if isinstance(exposure, dict):
+        contrast = exposure.get("contrast")
+        clamped_contrast = _clamp_numeric(contrast, minimum=-30, maximum=30)
+        if clamped_contrast != contrast:
+            exposure["contrast"] = clamped_contrast
+            applied.append("Clamped 'exposure.contrast' to -30..30")
+
+    return sanitized, applied
 
 
 def _serialize_pp3_value(value: object) -> str:

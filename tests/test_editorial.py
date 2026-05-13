@@ -145,6 +145,11 @@ class TestBuildCritiqueGate:
         assert "emotional_goal_score" in rubric
         assert "preservation_score" in rubric
         assert "distraction_control_score" in rubric
+        assert "visible_difference_score" in rubric
+        assert "visual_hierarchy_improvement_score" in rubric
+        assert "thumbnail_impact_score" in rubric
+        assert "composition_improvement_needed" in rubric
+        assert "crop_or_geometry_suggested" in rubric
         assert "generic_preset_penalty" in rubric
         assert "vision_alignment_score" in rubric
         assert "artifact_penalty" in rubric
@@ -153,8 +158,11 @@ class TestBuildCritiqueGate:
 
         threshold = gate["minimum_export_threshold"]
         assert threshold["core_score_average_min"] == 7.0
+        assert threshold["visible_difference_score_min"] == 6.0
+        assert threshold["thumbnail_impact_score_min"] == 6.0
         assert threshold["overprocessing_penalty_max"] == 3
         assert any("only changes exposure/warmth/saturation" in rule for rule in gate["next_action_rules"])
+        assert any("too close to the original" in rule for rule in gate["next_action_rules"])
 
     def test_includes_vision_alignment_rules_when_editing_vision_is_present(self):
         gate = build_critique_gate(
@@ -208,6 +216,9 @@ class TestBuildCritiqueGate:
         assert "emotional_goal_score" in rubric
         assert "preservation_score" in rubric
         assert "distraction_control_score" in rubric
+        assert "visible_difference_score" in rubric
+        assert "visual_hierarchy_improvement_score" in rubric
+        assert "thumbnail_impact_score" in rubric
         assert "generic_preset_penalty" in rubric
         assert "color_split_penalty" in rubric
         assert "vision_alignment_score" in rubric
@@ -240,6 +251,27 @@ class TestBuildCritiqueGate:
         )
         assert any("yellow/blue or cyan/warm split" in item for item in gate["automatic_failure_conditions"])
         assert any("color_split_penalty is high" in item for item in gate["next_action_rules"])
+
+    def test_export_contract_rejects_subtle_but_basically_identical_edits(self):
+        gate = build_critique_gate(
+            "preview.jpg",
+            candidate_name="cand1",
+            intended_style="faithful_refinement",
+            editing_vision={
+                "emotional_goal": "warm city energy",
+                "visual_anchor": "tram on the street",
+                "preserve": ["tasteful not fake"],
+            },
+        )
+        assert any(
+            "Visible improvement is too weak at thumbnail size" in item
+            for item in gate["automatic_failure_conditions"]
+        )
+        assert any(
+            "visible_difference_score or thumbnail_impact_score is weak" in item
+            for item in gate["next_action_rules"]
+        )
+        assert any("proof_only/refine" in answer for answer in gate["required_llm_answers"])
 
 
 class TestBuildIntentInferenceContract:

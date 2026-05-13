@@ -450,6 +450,8 @@ def _infer_intent_category_from_editing_vision(editing_vision: dict[str, Any] | 
         return "clean_portrait"
     if {"cloud", "storm", "overcast", "mist", "fog", "haze", "rural", "field", "fields"} & words:
         return "atmosphere_memory"
+    if {"tram", "architecture", "urban", "city", "geometry", "travel"} & words:
+        return "travel_place_vibe"
     if {"landscape", "mountain", "valley", "shore", "coast", "hills"} & words:
         return "landscape_light"
     if {"event", "documentary", "wedding", "party", "street"} & words:
@@ -596,6 +598,7 @@ def build_editorial_brief(
 
     export_criteria = [
         "Core quality scores pass critique threshold with low overprocessing penalty.",
+        "Visible improvement is obvious at thumbnail size, not only at full-size inspection.",
         "No obvious casts, fake HDR, or crunchy sharpening artifacts.",
         "Result stays aligned with inferred intent and preserves scene value.",
     ]
@@ -615,6 +618,7 @@ def build_editorial_brief(
         "Do not export final unless the preview is meaningfully better than the original.",
         "Fix the biggest flaw first.",
         "Make the before/after difference visible at thumbnail size unless this is a subtle proof edit.",
+        "If the edit is technically safe but visually too close to the original, mark refine or proof_only.",
         "If RawTherapee-only editing cannot solve the image, say so clearly.",
         "Prefer reject/proof_only over pretending every image is post-worthy.",
         "If crop harms composition, revert crop or avoid crop.",
@@ -655,6 +659,7 @@ def build_editorial_brief(
         "proof_only_criteria": [
             "Technical cleanup achieved but aesthetic strength still weak.",
             "Difference from original is valid but subtle and non-post-worthy.",
+            "Edit is safe but fails to create visible thumbnail-level improvement.",
             "RawTherapee-only edits improve clarity but cannot create a strong final image.",
         ],
         "export_criteria": export_criteria,
@@ -889,6 +894,11 @@ def build_critique_gate(
         "emotional_goal_score": "0-10",
         "preservation_score": "0-10",
         "distraction_control_score": "0-10",
+        "visible_difference_score": "0-10",
+        "visual_hierarchy_improvement_score": "0-10",
+        "thumbnail_impact_score": "0-10",
+        "composition_improvement_needed": "true|false with one-sentence reason",
+        "crop_or_geometry_suggested": "true|false with one-sentence reason",
         "generic_preset_penalty": "0-10",
         "color_split_penalty": "0-10",
         "vision_alignment_score": "0-10",
@@ -905,6 +915,7 @@ def build_critique_gate(
         "Grass/foliage is neon or skies look synthetic/cyan-heavy.",
         "Crop worsens composition or removes critical context.",
         "Edit feels barely different from original while output goal is post_worthy.",
+        "Visible improvement is too weak at thumbnail size to justify export.",
         "Edit only shifts exposure/warmth/saturation without tonal/color separation.",
         "Sharpening/contrast artifacts look crunchy or fake HDR.",
         "Edit corrects away the reason the photo works.",
@@ -920,12 +931,19 @@ def build_critique_gate(
     next_action_rules = [
         "If the edit only changes exposure/warmth/saturation and still looks basic, mark refine.",
         "If edit is only slightly different and output_goal is post_worthy, verdict must be refine.",
+        "If visible_difference_score or thumbnail_impact_score is weak, verdict must be refine or proof_only.",
+        "If visual_hierarchy_improvement_score is weak, do not export.",
         "If skin is orange or grass is neon, do not export.",
         "If cinematic_soft becomes gray/green and flat, mark refine or reject.",
         "If tonal separation is weak, refine using curves or color-balance tools before export.",
         "If crop makes composition worse, revert crop or try another crop.",
+        "If composition_improvement_needed is true and unresolved, do not export.",
         "If colors look fake, reduce saturation/warmth and refine.",
         "If image cannot become post-worthy with RawTherapee-only edits, mark proof_only or reject.",
+        (
+            "If all candidates remain too close to the original, final outcome is "
+            "proof_only or further refine, not export."
+        ),
         "If total score is below threshold, do not process final. Use adjust_profile or mark proof/reject.",
         "Do not praise the edit unless it clears threshold.",
         "Do not use words like stunning, perfect, or professional unless score supports it.",
@@ -964,6 +982,10 @@ def build_critique_gate(
                 "If preserve targets were compromised, revert and refine before export.",
                 "If avoid includes yellow/blue split or fake grade, set color_split_penalty high when split appears.",
                 "If color_split_penalty is high, verdict cannot be export.",
+                (
+                    "If the vision promises travel/street energy or geometry and the result is "
+                    "barely visible, verdict cannot be export."
+                ),
             ]
         )
         if vision_inferred_category and intent_standard.get("primary_intent_category") != vision_inferred_category:
@@ -983,6 +1005,9 @@ def build_critique_gate(
         "scoring_rubric": scoring_rubric,
         "minimum_export_threshold": {
             "core_score_average_min": 7.0,
+            "visible_difference_score_min": 6.0,
+            "visual_hierarchy_improvement_score_min": 6.0,
+            "thumbnail_impact_score_min": 6.0,
             "overprocessing_penalty_max": 3,
             "verdict_required": "export",
         },
@@ -991,11 +1016,14 @@ def build_critique_gate(
             "What inferred intent category is this critique using and why?",
             "What is the single biggest flaw in this candidate?",
             "Is the difference from original clearly visible at thumbnail size?",
+            "Is the visible improvement strong enough to justify export, or only proof_only/refine?",
             "What curve/color-separation decisions are visible (or missing)?",
             "Does this look like a basic phone filter? Why or why not?",
             "Did yellow/blue or cyan/warm split appear against the avoid list?",
             "Did this edit preserve the scene value and emotional payoff?",
             "Did the edit strengthen the visual anchor?",
+            "Did the edit improve visual hierarchy enough that the anchor reads faster than the distractions?",
+            "Is crop, rotation, or geometry cleanup needed before export?",
             "Did it preserve the emotional goal instead of replacing it with a generic preset look?",
             "What distractions were reduced or left competing?",
             "Did it destroy anything the image needed to preserve?",

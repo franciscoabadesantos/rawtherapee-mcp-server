@@ -95,6 +95,24 @@ _BLOCKED_COLOR_DRIFT_TAGS = {
     "warm_shift",
     "generic_pop",
 }
+_STREET_TRAVEL_GEOMETRY_TERMS = (
+    "street",
+    "travel",
+    "tram",
+    "rail",
+    "rails",
+    "wire",
+    "wires",
+    "architecture",
+    "architectural",
+    "building",
+    "buildings",
+    "urban",
+    "city",
+    "geometry",
+    "composition",
+    "postcard",
+)
 
 
 def _string_list(value: object) -> list[str]:
@@ -141,6 +159,31 @@ def _blocked_risk_tags(editing_vision: dict[str, Any] | None) -> set[str]:
     if any(term in avoid_text for term in _COLOR_DRIFT_AVOID_TERMS):
         return set(_BLOCKED_COLOR_DRIFT_TAGS)
     return set()
+
+
+def _vision_combined_text(editing_vision: dict[str, Any] | None) -> str:
+    """Return a normalized combined text blob for vision inference."""
+    if not editing_vision:
+        return ""
+    return " ".join(
+        [
+            str(editing_vision.get("emotional_goal", "")),
+            str(editing_vision.get("visual_anchor", "")),
+            str(editing_vision.get("viewer_notice_first", "")),
+            " ".join(_string_list(editing_vision.get("supporting_elements"))),
+            " ".join(_string_list(editing_vision.get("preserve"))),
+            " ".join(_string_list(editing_vision.get("avoid"))),
+            " ".join(_string_list(editing_vision.get("danger_notes"))),
+            " ".join(_string_list(editing_vision.get("editing_moves"))),
+            str(editing_vision.get("notes", "")),
+        ]
+    ).lower()
+
+
+def _is_street_travel_geometry_vision(editing_vision: dict[str, Any] | None) -> bool:
+    """Return True when the vision is urban/travel/geometry-led."""
+    combined_text = _vision_combined_text(editing_vision)
+    return any(term in combined_text for term in _STREET_TRAVEL_GEOMETRY_TERMS)
 
 
 _MOVE_TO_TECHNIQUES: dict[str, list[str]] = {
@@ -192,7 +235,10 @@ def _move_conflicts_with_vision(
         if move_name in explicit_moves and _is_water_anchor(editing_vision):
             return False
 
-    return bool(_move_risk_tags(move_name) & blocked_tags)
+    move_risk_tags = _move_risk_tags(move_name)
+    structural_exception = move_name in {"enhance_geometry", "emphasize_subject"}
+    effective_blocked_tags = blocked_tags - {"generic_pop"} if structural_exception else blocked_tags
+    return bool(move_risk_tags & effective_blocked_tags)
 
 
 def _filter_moves_by_vision(
@@ -505,11 +551,8 @@ def _infer_moves_from_vision(editing_vision: dict[str, Any] | None) -> list[str]
     if not editing_vision:
         return list(_DEFAULT_VISION_MOVES)
 
-    emotional_goal = str(editing_vision.get("emotional_goal", ""))
+    combined_text = _vision_combined_text(editing_vision)
     visual_anchor = str(editing_vision.get("visual_anchor", ""))
-    preserve_text = " ".join(_string_list(editing_vision.get("preserve")))
-    avoid_text = " ".join(_string_list(editing_vision.get("avoid")))
-    combined_text = " ".join([emotional_goal, visual_anchor, preserve_text, avoid_text]).lower()
     visual_anchor_text = visual_anchor.lower()
 
     moves: list[str] = []
@@ -529,6 +572,18 @@ def _infer_moves_from_vision(editing_vision: dict[str, Any] | None) -> list[str]
         moves.append("preserve_event_authenticity")
     if any(token in combined_text for token in ("geometry", "building", "architecture")):
         moves.append("enhance_geometry")
+    if any(token in combined_text for token in ("tram", "street", "urban", "city", "architecture", "geometry")):
+        moves.append("emphasize_subject")
+    if any(token in combined_text for token in ("travel", "street", "urban", "city", "tram", "postcard")):
+        moves.append("enhance_geometry")
+        moves.append("reduce_distractions")
+    if any(
+        token in combined_text
+        for token in ("warm", "summer", "mediterranean", "postcard", "travel", "city energy")
+    ):
+        moves.append("warm_memory")
+    if any(token in combined_text for token in ("travel", "postcard", "summer", "city energy")):
+        moves.append("increase_color_presence")
     if any(token in combined_text for token in ("warm", "memory", "sunset")):
         moves.append("warm_memory")
     if any(token in combined_text for token in ("cool", "melancholy", "rain", "quiet")):
@@ -596,7 +651,14 @@ def visual_moves_to_parameter_plan(
             and _is_water_anchor(intent_profile)
         )
         for technique_name in move_techniques:
-            if blocked_tags and (set(technique_risk_tags(technique_name)) & blocked_tags) and not allow_blocked_tags:
+            effective_blocked_tags = blocked_tags
+            if move_name in {"enhance_geometry", "emphasize_subject"}:
+                effective_blocked_tags = blocked_tags - {"generic_pop"}
+            if (
+                effective_blocked_tags
+                and (set(technique_risk_tags(technique_name)) & effective_blocked_tags)
+                and not allow_blocked_tags
+            ):
                 techniques_blocked.append(technique_name)
                 continue
             technique_names.append(technique_name)
@@ -697,6 +759,24 @@ def _pick_support_move(
     return None
 
 
+def _add_assertive_support_moves(
+    base_moves: list[str],
+    candidate_pool: tuple[str, ...],
+    editing_vision: dict[str, Any],
+    *,
+    limit: int,
+) -> list[str]:
+    """Append up to ``limit`` extra support moves without violating vision rules."""
+    updated_moves = list(base_moves)
+    while limit > 0:
+        support_move = _pick_support_move(updated_moves, candidate_pool, editing_vision)
+        if support_move is None:
+            break
+        updated_moves.append(support_move)
+        limit -= 1
+    return updated_moves
+
+
 def build_vision_candidate_specs(
     editing_vision: dict[str, Any],
     *,
@@ -711,6 +791,8 @@ def build_vision_candidate_specs(
     preserve_values = _string_list(editing_vision.get("preserve"))
     emotional_goal = str(editing_vision.get("emotional_goal", "faithful vision-first refinement")).strip()
     visual_anchor = str(editing_vision.get("visual_anchor", "the image's main anchor")).strip()
+    street_travel_geometry_vision = _is_street_travel_geometry_vision(editing_vision)
+    geometry_or_crop_suggested = street_travel_geometry_vision or "enhance_geometry" in resolved_moves
 
     faithful_moves = resolved_moves[: min(4, len(resolved_moves))]
     faithful_support = _pick_support_move(faithful_moves, _FAITHFUL_SUPPORT_MOVES, editing_vision)
@@ -721,14 +803,33 @@ def build_vision_candidate_specs(
     expressive_support = _pick_support_move(expressive_moves, _EXPRESSIVE_SUPPORT_MOVES, editing_vision)
     if expressive_support:
         expressive_moves.append(expressive_support)
+    if street_travel_geometry_vision:
+        expressive_moves = _add_assertive_support_moves(
+            expressive_moves,
+            ("emphasize_subject", "enhance_geometry", "increase_color_presence", "warm_memory", "lift_readability"),
+            editing_vision,
+            limit=2,
+        )
 
     experiment_moves = list(resolved_moves)
     experiment_support = _pick_support_move(experiment_moves, _EXPERIMENT_SUPPORT_MOVES, editing_vision)
     if experiment_support:
         experiment_moves.append(experiment_support)
+    if street_travel_geometry_vision:
+        experiment_moves = _add_assertive_support_moves(
+            experiment_moves,
+            ("emphasize_subject", "enhance_geometry", "increase_color_presence", "warm_memory", "lift_readability"),
+            editing_vision,
+            limit=3,
+        )
     avoid_text = _editing_vision_avoid_text(editing_vision)
     if "phone filter" in avoid_text and "calm_phone_filter_look" not in experiment_moves:
         experiment_moves.append("calm_phone_filter_look")
+
+    expressive_intensity = (
+        _stronger_intensity(intensity) if street_travel_geometry_vision else _normalize_intensity(intensity)
+    )
+    experiment_intensity = _stronger_intensity(intensity)
 
     return [
         {
@@ -744,11 +845,16 @@ def build_vision_candidate_specs(
                 "May remain too subtle if the anchor still feels buried.",
                 "Could under-communicate the emotional goal at thumbnail size.",
             ],
+            "visible_difference_score": "0-10 after preview",
+            "visual_hierarchy_improvement_score": "0-10 after preview",
+            "thumbnail_impact_score": "0-10 after preview",
+            "composition_improvement_needed": "yes|no after preview",
+            "crop_or_geometry_suggested": geometry_or_crop_suggested,
             "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
         },
         {
             "candidate_name": "expressive_refinement",
-            "parameter_intensity": _normalize_intensity(intensity),
+            "parameter_intensity": expressive_intensity,
             "visual_moves_used": _filtered_moves(expressive_moves),
             "intended_visual_effect": (
                 f"Clearer mood shaping for {emotional_goal} while still staying natural and editorial."
@@ -758,11 +864,16 @@ def build_vision_candidate_specs(
                 "Watch for the edit starting to feel like a preset instead of serving the vision.",
                 "Check that supporting elements do not overpower the visual anchor.",
             ],
+            "visible_difference_score": "0-10 after preview",
+            "visual_hierarchy_improvement_score": "0-10 after preview",
+            "thumbnail_impact_score": "0-10 after preview",
+            "composition_improvement_needed": "yes|no after preview",
+            "crop_or_geometry_suggested": geometry_or_crop_suggested,
             "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
         },
         {
             "candidate_name": "restrained_experiment",
-            "parameter_intensity": _stronger_intensity(intensity),
+            "parameter_intensity": experiment_intensity,
             "visual_moves_used": _filtered_moves(experiment_moves),
             "intended_visual_effect": (
                 "A stronger interpretation that still respects atmosphere, safety limits, and authenticity."
@@ -772,6 +883,11 @@ def build_vision_candidate_specs(
                 "Strongest risk of flattening mood or over-shaping color hierarchy.",
                 "Confirm the experiment still looks like the same photograph.",
             ],
+            "visible_difference_score": "0-10 after preview",
+            "visual_hierarchy_improvement_score": "0-10 after preview",
+            "thumbnail_impact_score": "0-10 after preview",
+            "composition_improvement_needed": "yes|no after preview",
+            "crop_or_geometry_suggested": geometry_or_crop_suggested,
             "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
         },
     ]

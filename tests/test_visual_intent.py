@@ -137,6 +137,21 @@ class TestVisualEditingMoves:
         )
         assert "enhance_water_depth" not in moves
 
+    def test_street_travel_geometry_vision_encourages_subject_and_geometry_moves(self):
+        moves = resolve_visual_moves(
+            {
+                "emotional_goal": "polished Barcelona street/travel look with warm city energy",
+                "visual_anchor": "tram on the street with rails and wires",
+                "supporting_elements": ["palms", "sky", "urban buildings"],
+                "preserve": ["summer postcard feeling", "tasteful not fake"],
+                "avoid": ["phone filter"],
+            }
+        )
+        assert "emphasize_subject" in moves
+        assert "enhance_geometry" in moves
+        assert "reduce_distractions" in moves
+        assert "gentle_tonal_separation" in moves
+
 
 class TestVisionCandidateSpecs:
     """Tests for three-candidate vision planning."""
@@ -194,3 +209,28 @@ class TestVisionCandidateSpecs:
             assert "enhance_water_depth" not in spec["visual_moves_used"]
             assert "increase_color_presence" not in spec["visual_moves_used"]
             assert "warm_memory" not in spec["visual_moves_used"]
+
+    def test_travel_geometry_candidates_include_visible_impact_checks(self):
+        editing_vision = {
+            "emotional_goal": "polished Barcelona street/travel look, warm city energy",
+            "visual_anchor": "tram as anchor with rails and wires",
+            "supporting_elements": ["palms", "sky", "urban context"],
+            "preserve": ["summer postcard feeling", "tasteful not fake"],
+            "editing_moves": ["emphasize_subject", "enhance_geometry", "reduce_distractions"],
+        }
+
+        specs = build_vision_candidate_specs(editing_vision, intensity="medium")
+        assert [spec["candidate_name"] for spec in specs] == [
+            "faithful_refinement",
+            "expressive_refinement",
+            "restrained_experiment",
+        ]
+        assert "enhance_geometry" in specs[1]["visual_moves_used"]
+        assert "emphasize_subject" in specs[1]["visual_moves_used"]
+        assert specs[1]["parameter_intensity"] == "high"
+        for spec in specs:
+            assert "visible_difference_score" in spec
+            assert "visual_hierarchy_improvement_score" in spec
+            assert "thumbnail_impact_score" in spec
+            assert "composition_improvement_needed" in spec
+            assert spec["crop_or_geometry_suggested"] is True

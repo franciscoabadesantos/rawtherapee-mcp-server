@@ -298,6 +298,11 @@ class TestEditorialWorkflowTools:
             assert "overwritten_parameters" in candidate
             assert "blocked_risk_tags" in candidate
             assert "merged_parameter_summary" in candidate
+            assert "visible_difference_score" in candidate
+            assert "visual_hierarchy_improvement_score" in candidate
+            assert "thumbnail_impact_score" in candidate
+            assert "composition_improvement_needed" in candidate
+            assert "crop_or_geometry_suggested" in candidate
             assert "safety_sanitizations_applied" in candidate
             assert Path(candidate["profile_path"]).is_file()
 
@@ -375,8 +380,12 @@ class TestEditorialWorkflowTools:
         assert "preserved_scene_value_score" in result["scoring_rubric"]
         assert "harmful_overcorrection_penalty" in result["scoring_rubric"]
         assert "color_split_penalty" in result["scoring_rubric"]
+        assert "visible_difference_score" in result["scoring_rubric"]
+        assert "visual_hierarchy_improvement_score" in result["scoring_rubric"]
+        assert "thumbnail_impact_score" in result["scoring_rubric"]
         assert "wrong_standard_warning" in result["scoring_rubric"]
         assert any("only changes exposure/warmth/saturation" in r for r in result["next_action_rules"])
+        assert any("too close to the original" in r for r in result["next_action_rules"])
         assert result["minimum_export_threshold"]["core_score_average_min"] == 7.0
 
     async def test_critique_gate_accepts_editing_vision(self, mock_ctx):

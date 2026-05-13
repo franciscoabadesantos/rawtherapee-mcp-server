@@ -34,6 +34,7 @@ from rawtherapee_mcp.server import (
     list_local_adjustments,
     list_raw_files,
     list_visual_editing_moves,
+    mcp,
     preview_before_after,
     preview_exposure_bracket,
     preview_raw,
@@ -41,6 +42,7 @@ from rawtherapee_mcp.server import (
     process_raw,
     read_exif,
     remove_local_adjustment,
+    visual_moves_to_parameters,
 )
 
 
@@ -183,6 +185,22 @@ class TestEditorialWorkflowTools:
         assert any(move["name"] == "shape_light_break" for move in result["moves"])
         assert "safety_notes" in result
 
+    async def test_visual_moves_to_parameters_tool_is_registered(self):
+        tools = await mcp.list_tools()
+        names = {tool.name for tool in tools}
+        assert "visual_moves_to_parameters" in names
+
+    async def test_visual_moves_to_parameters_tool_returns_sanitized_payload(self, mock_ctx):
+        result = await visual_moves_to_parameters(
+            mock_ctx,
+            ["shape_light_break", "soften_mist", "gentle_tonal_separation"],
+            intensity="medium",
+        )
+        assert "parameters" in result
+        assert "color_balance" not in result["parameters"]
+        assert "split_toning" not in result["parameters"]
+        assert "safety_sanitizations_applied" in result
+
     async def test_generate_editorial_candidates_returns_three_distinct_styles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
@@ -191,6 +209,8 @@ class TestEditorialWorkflowTools:
             result = await generate_editorial_candidates(mock_ctx, str(raw_file), "trip_frame")
         assert "error" not in result
         assert len(result["candidates"]) == 3
+        for candidate in result["candidates"]:
+            assert "safety_sanitizations_applied" in candidate
 
         style_names = [candidate["style_name"] for candidate in result["candidates"]]
         assert set(style_names) == {"clean_editorial", "warm_travel", "cinematic_soft"}
@@ -265,12 +285,27 @@ class TestEditorialWorkflowTools:
 
         for candidate in result["candidates"]:
             assert candidate["visual_moves_used"]
+            assert "safety_sanitizations_applied" in candidate
             assert Path(candidate["profile_path"]).is_file()
 
             profile = PP3Profile()
             profile.load(Path(candidate["profile_path"]))
             assert profile.get("ColorToning", "Method", "") == ""
             assert profile.get("SharpenMicro", "Uniformity", "") == ""
+
+    async def test_generate_vision_candidates_rejects_unfilled_contract(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+        contract = await create_editing_vision(mock_ctx, str(raw_file))
+
+        result = await generate_vision_candidates(
+            mock_ctx,
+            str(raw_file),
+            "vision_frame",
+            editing_vision=contract,
+        )
+        assert "error" in result
+        assert "unfilled editing vision contract" in result["error"].lower()
 
     async def test_critique_gate_returns_rubric_and_threshold(self, mock_ctx):
         result = await critique_gate(mock_ctx, candidate_name="warm_v1", intended_style="warm_travel")

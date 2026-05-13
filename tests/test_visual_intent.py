@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from rawtherapee_mcp.visual_intent import (
     build_editing_vision_contract,
     build_vision_candidate_specs,
@@ -82,6 +84,11 @@ class TestVisualEditingMoves:
 
 class TestVisionCandidateSpecs:
     """Tests for three-candidate vision planning."""
+
+    def test_rejects_unfilled_contract(self):
+        contract = build_editing_vision_contract("photo.cr3")
+        with pytest.raises(ValueError, match="unfilled editing vision contract"):
+            build_vision_candidate_specs(contract, intensity="medium")
 
     def test_builds_exactly_three_candidates(self):
         editing_vision = {

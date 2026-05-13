@@ -271,7 +271,7 @@ _PARAMETER_MAP: dict[str, dict[str, tuple[str, str]]] = {
 }
 
 
-def _clamp_numeric(value: Any, *, minimum: float | None = None, maximum: float | None = None) -> Any:
+def _clamp_numeric(value: object, *, minimum: float | None = None, maximum: float | None = None) -> object:
     """Clamp a numeric value while preserving non-numeric inputs."""
     if isinstance(value, bool):
         return value

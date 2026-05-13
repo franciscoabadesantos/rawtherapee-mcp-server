@@ -67,7 +67,12 @@ from rawtherapee_mcp.locallab import (
 from rawtherapee_mcp.metadata import inspect_metadata as _inspect_metadata
 from rawtherapee_mcp.metadata import set_metadata as _set_metadata
 from rawtherapee_mcp.metadata import strip_metadata as _strip_metadata
-from rawtherapee_mcp.pp3_generator import _load_template, apply_device_crop, apply_parameters
+from rawtherapee_mcp.pp3_generator import (
+    _load_template,
+    apply_device_crop,
+    apply_parameters,
+    sanitize_autonomous_parameters,
+)
 from rawtherapee_mcp.pp3_generator import generate_profile as _generate_profile
 from rawtherapee_mcp.pp3_parser import PP3Profile
 from rawtherapee_mcp.profile_hierarchy import create_variant as _create_variant
@@ -78,10 +83,13 @@ from rawtherapee_mcp.visual_intent import (
     build_editing_vision_contract,
     build_vision_candidate_specs,
     resolve_visual_moves,
-    visual_moves_to_parameters,
+    validate_filled_editing_vision,
 )
 from rawtherapee_mcp.visual_intent import (
     list_visual_editing_moves as build_visual_move_list,
+)
+from rawtherapee_mcp.visual_intent import (
+    visual_moves_to_parameters as map_visual_moves_to_parameters,
 )
 
 logger = logging.getLogger("rawtherapee_mcp")
@@ -554,6 +562,36 @@ async def list_visual_editing_moves(ctx: Context) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def visual_moves_to_parameters(
+    ctx: Context,
+    moves: list[str],
+    intensity: str = "medium",
+    intent_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Translate visual moves into sanitized autonomous parameter dictionaries.
+
+    This wrapper keeps output JSON-serializable and includes safety/debug fields.
+    """
+    _ = get_config(ctx)
+    raw_parameters = map_visual_moves_to_parameters(
+        moves,
+        intensity=intensity,
+        intent_profile=intent_profile,
+    )
+    sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(raw_parameters)
+    return {
+        "moves": list(moves),
+        "intensity": intensity,
+        "intent_profile": intent_profile,
+        "parameters": sanitized_parameters,
+        "techniques_used": [],
+        "overwritten_parameters": [],
+        "merge_conflicts": [],
+        "safety_sanitizations_applied": sanitization_notes,
+    }
+
+
+@mcp.tool()
 async def create_editorial_brief(
     ctx: Context,
     file_path: str,
@@ -642,18 +680,19 @@ async def generate_editorial_candidates(
             rt_version=rt_version,
         )
         if editing_vision:
-            visual_parameters = visual_moves_to_parameters(
+            visual_parameters = map_visual_moves_to_parameters(
                 resolve_visual_moves(editing_vision),
                 intensity="medium",
                 intent_profile=inferred_intent or editing_vision,
             )
             parameters = merge_parameter_sets(parameters, visual_parameters)
+        sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(parameters)
 
         try:
             profile, output_path = _generate_profile(
                 name=candidate_slug,
                 base_template="neutral",
-                parameters=parameters,
+                parameters=sanitized_parameters,
                 device_preset=preset_dict,
                 templates_dir=templates_dir,
                 custom_templates_dir=config.custom_templates_dir,
@@ -669,6 +708,7 @@ async def generate_editorial_candidates(
 
         descriptor = build_candidate_descriptor(style_name)
         descriptor["profile_path"] = str(output_path)
+        descriptor["safety_sanitizations_applied"] = sanitization_notes
         candidates.append(descriptor)
 
     return {
@@ -717,6 +757,9 @@ async def generate_vision_candidates(
             return {"error": f"Device preset '{device_preset}' not found"}
 
     source_dimensions = get_effective_dimensions(raw_path)
+    validation_error = validate_filled_editing_vision(editing_vision)
+    if validation_error:
+        return {"error": validation_error}
     candidate_specs = build_vision_candidate_specs(editing_vision, intensity=intensity)
     candidates: list[dict[str, Any]] = []
 
@@ -724,17 +767,18 @@ async def generate_vision_candidates(
         candidate_name = str(candidate_spec["candidate_name"])
         candidate_slug = safe_slug(f"{base_name}_{candidate_name}")
         visual_moves_used = list(candidate_spec["visual_moves_used"])
-        parameters = visual_moves_to_parameters(
+        parameters = map_visual_moves_to_parameters(
             visual_moves_used,
             intensity=str(candidate_spec["parameter_intensity"]),
             intent_profile=editing_vision,
         )
+        sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(parameters)
 
         try:
             profile, output_path = _generate_profile(
                 name=candidate_slug,
                 base_template="neutral",
-                parameters=parameters,
+                parameters=sanitized_parameters,
                 device_preset=preset_dict,
                 templates_dir=templates_dir,
                 custom_templates_dir=config.custom_templates_dir,
@@ -750,6 +794,7 @@ async def generate_vision_candidates(
 
         descriptor = dict(candidate_spec)
         descriptor["profile_path"] = str(output_path)
+        descriptor["safety_sanitizations_applied"] = sanitization_notes
         candidates.append(descriptor)
 
     return {

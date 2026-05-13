@@ -73,6 +73,16 @@ _SAFE_MOVE_NOTES = [
 _FAITHFUL_SUPPORT_MOVES = ("reduce_distractions", "soft_highlight_rolloff", "gentle_tonal_separation")
 _EXPRESSIVE_SUPPORT_MOVES = ("increase_color_presence", "deepen_clean_shadows", "lift_readability")
 _EXPERIMENT_SUPPORT_MOVES = ("shape_light_break", "deepen_cloud_weight", "enhance_water_depth", "warm_memory")
+_UNFILLED_CONTRACT_KEYS = (
+    "editing_vision_schema",
+    "required_visual_questions",
+    "output_contract",
+    "suggested_visual_moves",
+)
+_UNFILLED_CONTRACT_ERROR = (
+    "This looks like an unfilled editing vision contract. Preview the image, fill emotional_goal, "
+    "visual_anchor, preserve, avoid, and editing_moves, then call generate_vision_candidates again."
+)
 
 
 def _string_list(value: object) -> list[str]:
@@ -698,6 +708,19 @@ def visual_moves_to_parameters(
     return merged
 
 
+def validate_filled_editing_vision(editing_vision: dict[str, Any]) -> str | None:
+    """Return error text when editing_vision looks like an unfilled contract."""
+    if any(key in editing_vision for key in _UNFILLED_CONTRACT_KEYS):
+        return _UNFILLED_CONTRACT_ERROR
+
+    emotional_goal = str(editing_vision.get("emotional_goal", "")).strip()
+    visual_anchor = str(editing_vision.get("visual_anchor", "")).strip()
+    editing_moves = _string_list(editing_vision.get("editing_moves"))
+    if not emotional_goal or not visual_anchor or not editing_moves:
+        return _UNFILLED_CONTRACT_ERROR
+    return None
+
+
 def _stronger_intensity(intensity: str) -> str:
     """Return a slightly stronger intensity label."""
     normalized = _normalize_intensity(intensity)
@@ -732,6 +755,10 @@ def build_vision_candidate_specs(
     intensity: str = "medium",
 ) -> list[dict[str, Any]]:
     """Build exactly three safe vision-first candidate plans."""
+    validation_error = validate_filled_editing_vision(editing_vision)
+    if validation_error:
+        raise ValueError(validation_error)
+
     resolved_moves = resolve_visual_moves(editing_vision)
     avoid_text = " ".join(_string_list(editing_vision.get("avoid"))).lower()
     preserve_values = _string_list(editing_vision.get("preserve"))

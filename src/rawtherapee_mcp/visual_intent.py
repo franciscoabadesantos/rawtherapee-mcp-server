@@ -4,16 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from rawtherapee_mcp.advanced_color import (
-    clean_midtone_contrast,
-    clean_sky_blue,
-    gentle_s_curve,
-    merge_parameter_sets,
-    natural_green_control,
-    protect_skin_reduce_orange,
-    reduce_green_gray_cast,
-    soft_highlight_rolloff,
-)
+from rawtherapee_mcp.editing_techniques import combine_techniques
 
 ParameterSet = dict[str, dict[str, Any]]
 
@@ -106,262 +97,28 @@ def _normalize_intensity(intensity: str) -> str:
     return intensity if intensity in _VALID_INTENSITIES else "medium"
 
 
-def _scale(value: float | int, intensity: str) -> float:
-    """Scale a move magnitude by the selected intensity."""
-    return float(value) * _INTENSITY_SCALE[_normalize_intensity(intensity)]
-
-
-def _round_int(value: float | int) -> int:
-    """Round a numeric value to int for PP3 integer fields."""
-    return int(round(float(value)))
-
-
-def _clamp(value: float | int, lower: float, upper: float) -> float:
-    """Clamp numeric value to a safe interval."""
-    return max(lower, min(upper, float(value)))
-
-
-def _merge_move_layers(layers: list[ParameterSet]) -> ParameterSet:
-    """Merge multiple parameter layers safely."""
-    if not layers:
-        return {}
-    return merge_parameter_sets(*layers)
-
-
-def _curve_for_mist(intensity: str) -> str:
-    """Gentle curve that softens contrast without flattening the image."""
-    if _normalize_intensity(intensity) == "high":
-        return "3;0;0.02;0.25;0.23;0.52;0.53;0.80;0.82;1;0.97;"
-    if _normalize_intensity(intensity) == "low":
-        return "3;0;0.00;0.25;0.24;0.50;0.51;0.78;0.83;1;1.00;"
-    return "3;0;0.01;0.25;0.24;0.51;0.52;0.79;0.83;1;0.98;"
-
-
-def _move_parameters(move_name: str, intensity: str, intent_profile: dict[str, Any] | None) -> ParameterSet:
-    """Translate one high-level visual move into safe PP3 parameter groups."""
-    profile = intent_profile or {}
-    scale = _INTENSITY_SCALE[_normalize_intensity(intensity)]
-    primary_intent = str(profile.get("primary_intent_category", ""))
-    portrait_like = primary_intent in {"clean_portrait", "studio_polished", "wedding_or_formal_event"}
-
-    if move_name == "emphasize_subject":
-        return {
-            "exposure": {
-                "compensation": round(_scale(0.18, intensity), 2),
-                "contrast": _round_int(_scale(4, intensity)),
-            },
-            "luminance_curve": {
-                "enabled": True,
-                "contrast": _round_int(_scale(6, intensity)),
-                "avoid_color_shift": True,
-                "red_skin_protection": 12 if portrait_like else 8,
-            },
-        }
-    if move_name == "preserve_silhouette":
-        return {
-            "exposure": {
-                "compensation": round(_clamp(_scale(-0.05, intensity), -0.15, 0.02), 2),
-                "highlight_compression": _round_int(_clamp(_scale(18, intensity), 12, 28)),
-                "black": _round_int(_clamp(_scale(-3, intensity), -5, -1)),
-            }
-        }
-    if move_name == "shape_light_break":
-        return merge_parameter_sets(
-            soft_highlight_rolloff(),
-            {
-                "exposure": {
-                    "compensation": round(_clamp(_scale(0.12, intensity), 0.06, 0.24), 2),
-                    "highlight_compression": _round_int(_clamp(_scale(24, intensity), 18, 34)),
-                },
-                "luminance_curve": {
-                    "enabled": True,
-                    "contrast": _round_int(_clamp(_scale(4, intensity), 2, 7)),
-                    "avoid_color_shift": True,
-                    "lh_curve": "3;0;0;0.35;0.40;0.70;0.64;1;1;",
-                    "hh_curve": "3;0;0;0.60;0.68;0.86;0.80;1;0.93;",
-                },
-            },
-        )
-    if move_name == "deepen_cloud_weight":
-        return merge_parameter_sets(
-            gentle_s_curve(),
-            {
-                "exposure": {
-                    "contrast": _round_int(_clamp(_scale(5, intensity), 3, 8)),
-                    "highlight_compression": _round_int(_clamp(_scale(20, intensity), 14, 30)),
-                    "black": _round_int(_clamp(_scale(-4, intensity), -6, -2)),
-                    "saturation": _round_int(_clamp(_scale(-1, intensity), -2, 0)),
-                }
-            },
-        )
-    if move_name == "soften_mist":
-        return {
-            "exposure": {
-                "contrast": _round_int(_clamp(_scale(-2, intensity), -4, -1)),
-                "highlight_compression": _round_int(_clamp(_scale(14, intensity), 8, 22)),
-            },
-            "tone_curve": {
-                "curve_mode": "Standard",
-                "curve_mode2": "Standard",
-                "curve2": _curve_for_mist(intensity),
-            },
-            "sharpening": {
-                "enabled": True,
-                "radius": 0.45,
-                "amount": _round_int(_clamp(110 + 10 * scale, 105, 125)),
-            },
-            "noise_reduction": {
-                "enabled": True,
-                "luminance": _round_int(_clamp(10 + 2 * scale, 10, 14)),
-                "chrominance": _round_int(_clamp(10 + 2 * scale, 10, 14)),
-            },
-        }
-    if move_name == "enhance_water_depth":
-        return merge_parameter_sets(
-            clean_sky_blue(),
-            {
-                "exposure": {
-                    "contrast": _round_int(_clamp(_scale(3, intensity), 2, 5)),
-                    "black": _round_int(_clamp(_scale(-2, intensity), -3, -1)),
-                    "saturation": _round_int(_clamp(_scale(1, intensity), 0, 2)),
-                }
-            },
-        )
-    if move_name == "increase_color_presence":
-        return {
-            "vibrance": {
-                "enabled": True,
-                "pastels": _round_int(_clamp(_scale(8, intensity), 5, 12)),
-                "saturated": _round_int(_clamp(_scale(4, intensity), 2, 7)),
-                "protectskins": True,
-                "avoidcolorshift": True,
-            }
-        }
-    if move_name == "warm_memory":
-        return {
-            "white_balance": {
-                "method": "Custom",
-                "temperature": _round_int(_clamp(5500 + _scale(220, intensity), 5650, 5900)),
-                "green": 1.0,
-            },
-            "vibrance": {
-                "enabled": True,
-                "pastels": _round_int(_clamp(_scale(6, intensity), 4, 9)),
-                "saturated": _round_int(_clamp(_scale(2, intensity), 1, 4)),
-                "protectskins": True,
-                "avoidcolorshift": True,
-            },
-        }
-    if move_name == "cool_melancholy":
-        return {
-            "white_balance": {
-                "method": "Custom",
-                "temperature": _round_int(_clamp(5500 - _scale(250, intensity), 5150, 5350)),
-                "green": 1.01,
-            },
-            "exposure": {
-                "saturation": _round_int(_clamp(_scale(-1, intensity), -2, 0)),
-                "highlight_compression": _round_int(_clamp(_scale(16, intensity), 10, 24)),
-            },
-        }
-    if move_name == "reduce_distractions":
-        return {
-            "exposure": {
-                "saturation": _round_int(_clamp(_scale(-2, intensity), -3, -1)),
-                "highlight_compression": _round_int(_clamp(_scale(12, intensity), 8, 18)),
-            },
-            "sharpening": {
-                "enabled": True,
-                "radius": 0.45,
-                "amount": _round_int(_clamp(105 + 8 * scale, 105, 118)),
-            },
-        }
-    if move_name == "enhance_geometry":
-        return merge_parameter_sets(
-            gentle_s_curve(),
-            {
-                "exposure": {
-                    "contrast": _round_int(_clamp(_scale(5, intensity), 3, 7)),
-                    "black": _round_int(_clamp(_scale(-2, intensity), -3, -1)),
-                },
-                "sharpening": {
-                    "enabled": True,
-                    "radius": 0.5,
-                    "amount": _round_int(_clamp(125 + 10 * scale, 125, 140)),
-                },
-            },
-        )
-    if move_name == "protect_skin":
-        return protect_skin_reduce_orange()
-    if move_name == "natural_greens":
-        return merge_parameter_sets(natural_green_control(), reduce_green_gray_cast())
-    if move_name == "clean_sky":
-        return merge_parameter_sets(clean_sky_blue(), soft_highlight_rolloff())
-    if move_name == "lift_readability":
-        return {
-            "exposure": {
-                "compensation": round(_clamp(_scale(0.16, intensity), 0.10, 0.24), 2),
-                "contrast": _round_int(_clamp(_scale(3, intensity), 2, 5)),
-                "highlight_compression": _round_int(_clamp(_scale(12, intensity), 8, 18)),
-            },
-            "luminance_curve": {
-                "enabled": True,
-                "contrast": _round_int(_clamp(_scale(5, intensity), 3, 7)),
-                "avoid_color_shift": True,
-                "red_skin_protection": 14 if portrait_like else 10,
-            },
-        }
-    if move_name == "deepen_clean_shadows":
-        return {
-            "exposure": {
-                "black": _round_int(_clamp(_scale(-3, intensity), -5, -2)),
-                "contrast": _round_int(_clamp(_scale(2, intensity), 1, 4)),
-            },
-            "tone_curve": {
-                "curve_mode": "Standard",
-                "curve_mode2": "Standard",
-                "curve2": "3;0;0;0.20;0.16;0.50;0.54;0.80;0.86;1;1;",
-            },
-        }
-    if move_name == "soft_highlight_rolloff":
-        return soft_highlight_rolloff()
-    if move_name == "gentle_tonal_separation":
-        return merge_parameter_sets(gentle_s_curve(), clean_midtone_contrast())
-    if move_name == "calm_phone_filter_look":
-        return {
-            "exposure": {
-                "saturation": _round_int(_clamp(_scale(-4, intensity), -5, -2)),
-                "contrast": _round_int(_clamp(_scale(-1, intensity), -2, 0)),
-            },
-            "vibrance": {
-                "enabled": True,
-                "pastels": _round_int(_clamp(_scale(-1, intensity), -2, 0)),
-                "saturated": _round_int(_clamp(_scale(-3, intensity), -4, -1)),
-                "protectskins": True,
-                "avoidcolorshift": True,
-            },
-        }
-    if move_name == "preserve_event_authenticity":
-        return {
-            "exposure": {
-                "compensation": round(_clamp(_scale(0.10, intensity), 0.05, 0.16), 2),
-                "contrast": _round_int(_clamp(_scale(2, intensity), 1, 4)),
-                "saturation": 0,
-                "highlight_compression": _round_int(_clamp(_scale(10, intensity), 8, 14)),
-            },
-            "sharpening": {
-                "enabled": True,
-                "radius": 0.45,
-                "amount": _round_int(_clamp(112 + 8 * scale, 112, 122)),
-            },
-            "noise_reduction": {
-                "enabled": True,
-                "luminance": 10,
-                "chrominance": 10,
-            },
-        }
-
-    return {}
+_MOVE_TO_TECHNIQUES: dict[str, list[str]] = {
+    "emphasize_subject": ["subject_readability_without_hdr", "gentle_tonal_separation"],
+    "preserve_silhouette": ["preserve_silhouette_tone", "soft_highlight_rolloff"],
+    "shape_light_break": ["soft_highlight_rolloff", "shape_light_break_tonality", "subtle_shadow_depth"],
+    "deepen_cloud_weight": ["gentle_tonal_separation", "subtle_shadow_depth", "soft_highlight_rolloff"],
+    "soften_mist": ["muted_fog_contrast", "soft_highlight_rolloff", "calm_global_saturation"],
+    "enhance_water_depth": ["subtle_water_luma_depth", "controlled_blue_presence", "gentle_tonal_separation"],
+    "increase_color_presence": ["gentle_s_curve", "clean_midtone_contrast"],
+    "warm_memory": ["skin_safe_warmth", "soft_highlight_rolloff"],
+    "cool_melancholy": ["muted_fog_contrast", "calm_global_saturation"],
+    "reduce_distractions": ["calm_global_saturation", "soft_highlight_rolloff"],
+    "enhance_geometry": ["clean_midtone_contrast", "gentle_structure_without_crunch"],
+    "protect_skin": ["skin_safe_warmth", "clean_neutral_balance"],
+    "natural_greens": ["natural_green_compression", "reduce_green_gray_cast_safe"],
+    "clean_sky": ["controlled_blue_presence", "soft_highlight_rolloff"],
+    "lift_readability": ["subject_readability_without_hdr", "clean_midtone_contrast"],
+    "deepen_clean_shadows": ["subtle_shadow_depth", "gentle_tonal_separation"],
+    "soft_highlight_rolloff": ["soft_highlight_rolloff"],
+    "gentle_tonal_separation": ["gentle_tonal_separation"],
+    "calm_phone_filter_look": ["calm_global_saturation", "clean_neutral_balance"],
+    "preserve_event_authenticity": ["clean_neutral_balance", "gentle_tonal_separation", "preserve_material_texture"],
+}
 
 
 _VISUAL_MOVE_REGISTRY: dict[str, dict[str, str]] = {
@@ -689,23 +446,13 @@ def visual_moves_to_parameters(
     intensity: str = "medium",
     intent_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Convert high-level visual moves into safe PP3 parameter groups."""
-    normalized_intensity = _normalize_intensity(intensity)
-    layers = [
-        _move_parameters(move_name, normalized_intensity, intent_profile)
-        for move_name in _filtered_moves(moves)
-    ]
-    merged = _merge_move_layers(layers)
-
-    if "microcontrast" in merged:
-        microcontrast = dict(merged["microcontrast"])
-        microcontrast.pop("uniformity", None)
-        microcontrast.pop("matrix", None)
-        merged["microcontrast"] = microcontrast
-
-    merged.pop("color_balance", None)
-    merged.pop("split_toning", None)
-    return merged
+    """Convert high-level visual moves into safe technique-composed parameters."""
+    _normalize_intensity(intensity)
+    technique_names: list[str] = []
+    for move_name in _filtered_moves(moves):
+        technique_names.extend(_MOVE_TO_TECHNIQUES.get(move_name, []))
+    merged = combine_techniques(technique_names)
+    return merged["parameters"]
 
 
 def validate_filled_editing_vision(editing_vision: dict[str, Any]) -> str | None:

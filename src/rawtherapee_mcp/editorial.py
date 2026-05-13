@@ -430,6 +430,33 @@ def _build_intent_standard(inferred_intent: dict[str, Any] | None, intent: str |
     }
 
 
+def _infer_intent_category_from_editing_vision(editing_vision: dict[str, Any] | None) -> str | None:
+    """Infer a likely critique category from editing-vision language."""
+    if not editing_vision:
+        return None
+
+    parts = [
+        str(editing_vision.get("emotional_goal", "")),
+        str(editing_vision.get("visual_anchor", "")),
+        " ".join(_string_list(editing_vision.get("preserve"))),
+        " ".join(_string_list(editing_vision.get("avoid"))),
+        " ".join(_string_list(editing_vision.get("danger_notes"))),
+    ]
+    words = _normalized_words(" ".join(parts))
+    if not words:
+        return None
+
+    if {"portrait", "face", "skin", "subject"} & words:
+        return "clean_portrait"
+    if {"cloud", "storm", "overcast", "mist", "fog", "haze", "rural", "field", "fields"} & words:
+        return "atmosphere_memory"
+    if {"landscape", "mountain", "valley", "shore", "coast", "hills"} & words:
+        return "landscape_light"
+    if {"event", "documentary", "wedding", "party", "street"} & words:
+        return "event_documentary"
+    return None
+
+
 def build_intent_inference_contract(
     file_path: str,
     *,
@@ -828,10 +855,18 @@ def build_critique_gate(
     elif isinstance(inferred_intent, dict):
         merged_intent = inferred_intent
 
+    vision_inferred_category = _infer_intent_category_from_editing_vision(editing_vision)
+    if merged_intent is None and vision_inferred_category:
+        merged_intent = {
+            "primary_intent_category": vision_inferred_category,
+            "selected_intent_category": vision_inferred_category,
+        }
+
     intent_hint = critique_standard if isinstance(critique_standard, str) else None
     intent_standard = _build_intent_standard(merged_intent, intent_hint)
     subject_priority = str(intent_standard.get("subject_clarity_priority", "balanced"))
     dark_subject_policy = str(intent_standard.get("dark_subject_policy", ""))
+    avoid_text = " ".join(_string_list((editing_vision or {}).get("avoid"))).lower()
 
     scoring_rubric = {
         "subject_separation_score": "0-10",
@@ -855,6 +890,7 @@ def build_critique_gate(
         "preservation_score": "0-10",
         "distraction_control_score": "0-10",
         "generic_preset_penalty": "0-10",
+        "color_split_penalty": "0-10",
         "vision_alignment_score": "0-10",
         "harmful_overcorrection_penalty": "0-10",
         "artifact_penalty": "0-10",
@@ -898,6 +934,11 @@ def build_critique_gate(
         "If the edit removes the visual reason this photo exists, mark refine or reject.",
         "If artifacts appear (posterization, halos, contour speckling), mark refine or reject.",
     ]
+    if any(term in avoid_text for term in ("orange/blue", "yellow/blue", "fake grade", "split", "synthetic blue")):
+        automatic_failure_conditions.append(
+            "If yellow/blue or cyan/warm split appears against the avoid list, do not export."
+        )
+
     if subject_priority == "critical":
         next_action_rules.insert(1, "If subject/face is still too dark or muddy, do not export final.")
     else:
@@ -921,8 +962,14 @@ def build_critique_gate(
                 "Prioritize alignment to visual_anchor over generic style labels.",
                 "If emotional goal is not visible, verdict cannot be export.",
                 "If preserve targets were compromised, revert and refine before export.",
+                "If avoid includes yellow/blue split or fake grade, set color_split_penalty high when split appears.",
+                "If color_split_penalty is high, verdict cannot be export.",
             ]
         )
+        if vision_inferred_category and intent_standard.get("primary_intent_category") != vision_inferred_category:
+            next_action_rules.append(
+                "If critique standard conflicts with editing vision, set wrong_standard_warning=true and re-critique."
+            )
 
     return {
         "preview_path": preview_path,
@@ -946,6 +993,7 @@ def build_critique_gate(
             "Is the difference from original clearly visible at thumbnail size?",
             "What curve/color-separation decisions are visible (or missing)?",
             "Does this look like a basic phone filter? Why or why not?",
+            "Did yellow/blue or cyan/warm split appear against the avoid list?",
             "Did this edit preserve the scene value and emotional payoff?",
             "Did the edit strengthen the visual anchor?",
             "Did it preserve the emotional goal instead of replacing it with a generic preset look?",

@@ -81,6 +81,42 @@ class TestVisualEditingMoves:
         assert moves[:2] == ["shape_light_break", "soften_mist"]
         assert "gentle_tonal_separation" in moves
 
+    def test_avoid_yellow_blue_split_blocks_controlled_blue_presence_by_default(self):
+        params = visual_moves_to_parameters(
+            ["clean_sky"],
+            intent_profile={
+                "visual_anchor": "sunlight over rural fields",
+                "avoid": ["yellow/blue split", "fake grade"],
+            },
+        )
+        hsv = params.get("hsv_equalizer", {})
+        assert "v_curve" not in hsv
+
+    def test_avoid_yellow_blue_split_allows_controlled_blue_only_for_explicit_water_anchor(self):
+        params = visual_moves_to_parameters(
+            ["enhance_water_depth"],
+            intent_profile={
+                "visual_anchor": "ocean water mass and bay horizon",
+                "editing_moves": ["enhance_water_depth"],
+                "avoid": ["yellow/blue split", "fake grade"],
+            },
+        )
+        hsv = params.get("hsv_equalizer", {})
+        assert hsv.get("enabled") is True
+        assert "v_curve" in hsv
+
+    def test_supporting_water_alone_does_not_trigger_water_enhancement(self):
+        moves = resolve_visual_moves(
+            {
+                "emotional_goal": "mysterious rural cloud mood with hopeful light",
+                "visual_anchor": "sunlight breaking through over the fields under heavy clouds",
+                "supporting_elements": ["waterline"],
+                "preserve": ["mist", "cloud weight"],
+                "avoid": ["fake orange/blue grade"],
+            }
+        )
+        assert "enhance_water_depth" not in moves
+
 
 class TestVisionCandidateSpecs:
     """Tests for three-candidate vision planning."""
@@ -110,3 +146,31 @@ class TestVisionCandidateSpecs:
         for spec in specs:
             assert spec["visual_moves_used"]
             assert "suggested_next_tools" in spec
+
+    def test_rural_cloud_anchor_stays_out_of_blue_split_direction(self):
+        editing_vision = {
+            "emotional_goal": "mysterious rural cloud mood with hopeful light",
+            "visual_anchor": "sunlight breaking through over the fields under heavy clouds",
+            "supporting_elements": ["village", "waterline"],
+            "preserve": ["fog", "cloud weight", "soft natural light"],
+            "avoid": ["fake orange/blue grade", "yellow/blue split", "generic postcard brightness"],
+            "danger_notes": ["no synthetic blue", "no phone filter look"],
+            "editing_moves": [
+                "shape_light_break",
+                "deepen_cloud_weight",
+                "soften_mist",
+                "gentle_tonal_separation",
+                "natural_greens",
+            ],
+        }
+
+        specs = build_vision_candidate_specs(editing_vision, intensity="medium")
+        assert [spec["candidate_name"] for spec in specs] == [
+            "faithful_refinement",
+            "expressive_refinement",
+            "restrained_experiment",
+        ]
+        for spec in specs:
+            assert "enhance_water_depth" not in spec["visual_moves_used"]
+            assert "increase_color_presence" not in spec["visual_moves_used"]
+            assert "warm_memory" not in spec["visual_moves_used"]

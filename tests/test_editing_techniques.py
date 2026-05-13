@@ -5,6 +5,7 @@ from __future__ import annotations
 from rawtherapee_mcp.editing_techniques import (
     TECHNIQUE_REGISTRY,
     combine_techniques,
+    technique_risk_tags,
     technique_to_parameters,
 )
 
@@ -41,6 +42,11 @@ class TestTechniqueRegistry:
             microcontrast = params.get("microcontrast", {})
             if isinstance(microcontrast, dict):
                 assert "uniformity" not in microcontrast
+
+    def test_registry_exposes_expected_risk_tags(self):
+        assert set(technique_risk_tags("controlled_blue_presence")) == {"cyan_shift", "blue_split", "synthetic_blue"}
+        assert set(technique_risk_tags("skin_safe_warmth")) == {"warm_shift", "orange_shift"}
+        assert set(technique_risk_tags("natural_green_compression")) == {"hue_shift", "green_shift"}
 
 
 class TestCombineTechniques:

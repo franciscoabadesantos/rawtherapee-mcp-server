@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from rawtherapee_mcp.editing_techniques import combine_techniques
+from rawtherapee_mcp.editing_techniques import combine_techniques, technique_risk_tags
 
 ParameterSet = dict[str, dict[str, Any]]
 
@@ -74,6 +74,27 @@ _UNFILLED_CONTRACT_ERROR = (
     "This looks like an unfilled editing vision contract. Preview the image, fill emotional_goal, "
     "visual_anchor, preserve, avoid, and editing_moves, then call generate_vision_candidates again."
 )
+_COLOR_DRIFT_AVOID_TERMS = (
+    "orange/blue",
+    "orange blue",
+    "yellow/blue",
+    "yellow blue",
+    "cyan",
+    "fake grade",
+    "split",
+    "synthetic blue",
+    "postcard",
+    "phone filter",
+)
+_WATER_ANCHOR_TERMS = ("water", "ocean", "bay", "sea")
+_BLOCKED_COLOR_DRIFT_TAGS = {
+    "cyan_shift",
+    "blue_split",
+    "synthetic_blue",
+    "orange_shift",
+    "warm_shift",
+    "generic_pop",
+}
 
 
 def _string_list(value: object) -> list[str]:
@@ -95,6 +116,31 @@ def _string_list(value: object) -> list[str]:
 def _normalize_intensity(intensity: str) -> str:
     """Return a supported intensity label."""
     return intensity if intensity in _VALID_INTENSITIES else "medium"
+
+
+def _editing_vision_avoid_text(editing_vision: dict[str, Any] | None) -> str:
+    """Return normalized avoid + danger text for alignment checks."""
+    if not editing_vision:
+        return ""
+    avoid = " ".join(_string_list(editing_vision.get("avoid")))
+    danger = " ".join(_string_list(editing_vision.get("danger_notes")))
+    return f"{avoid} {danger}".strip().lower()
+
+
+def _is_water_anchor(editing_vision: dict[str, Any] | None) -> bool:
+    """Return True when the visual anchor is explicitly water-centric."""
+    if not editing_vision:
+        return False
+    visual_anchor = str(editing_vision.get("visual_anchor", "")).lower()
+    return any(term in visual_anchor for term in _WATER_ANCHOR_TERMS)
+
+
+def _blocked_risk_tags(editing_vision: dict[str, Any] | None) -> set[str]:
+    """Return risk tags that should be blocked from avoid/danger guidance."""
+    avoid_text = _editing_vision_avoid_text(editing_vision)
+    if any(term in avoid_text for term in _COLOR_DRIFT_AVOID_TERMS):
+        return set(_BLOCKED_COLOR_DRIFT_TAGS)
+    return set()
 
 
 _MOVE_TO_TECHNIQUES: dict[str, list[str]] = {
@@ -119,6 +165,74 @@ _MOVE_TO_TECHNIQUES: dict[str, list[str]] = {
     "calm_phone_filter_look": ["calm_global_saturation", "clean_neutral_balance"],
     "preserve_event_authenticity": ["clean_neutral_balance", "gentle_tonal_separation", "preserve_material_texture"],
 }
+
+
+def _move_risk_tags(move_name: str) -> set[str]:
+    """Return aggregate risk tags for all techniques in one move."""
+    tags: set[str] = set()
+    for technique_name in _MOVE_TO_TECHNIQUES.get(move_name, []):
+        tags.update(technique_risk_tags(technique_name))
+    return tags
+
+
+def _move_conflicts_with_vision(
+    move_name: str,
+    *,
+    editing_vision: dict[str, Any] | None,
+    blocked_tags: set[str],
+    explicit_moves: set[str],
+) -> bool:
+    """Return True when a move conflicts with explicit avoid/danger guidance."""
+    if move_name == "enhance_water_depth":
+        # Water in supporting elements is not enough; the anchor must be water-centric.
+        if not _is_water_anchor(editing_vision):
+            return True
+    if move_name in {"enhance_water_depth", "clean_sky"} and blocked_tags:
+        # Only allow explicit requests when water is truly the anchor.
+        if move_name in explicit_moves and _is_water_anchor(editing_vision):
+            return False
+
+    return bool(_move_risk_tags(move_name) & blocked_tags)
+
+
+def _filter_moves_by_vision(
+    moves: list[str],
+    *,
+    editing_vision: dict[str, Any] | None,
+    explicit_moves: set[str],
+) -> list[str]:
+    """Drop moves that violate avoid/danger guidance or water-anchor rules."""
+    blocked_tags = _blocked_risk_tags(editing_vision)
+    filtered: list[str] = []
+    for move_name in _filtered_moves(moves):
+        if _move_conflicts_with_vision(
+            move_name,
+            editing_vision=editing_vision,
+            blocked_tags=blocked_tags,
+            explicit_moves=explicit_moves,
+        ):
+            continue
+        filtered.append(move_name)
+    return filtered
+
+
+def _anchor_priority_moves(editing_vision: dict[str, Any] | None) -> set[str]:
+    """Return support moves aligned to the current visual anchor text."""
+    if not editing_vision:
+        return set()
+    visual_anchor = str(editing_vision.get("visual_anchor", "")).lower()
+    priorities: set[str] = set()
+    if any(token in visual_anchor for token in ("sun", "light break", "lightbreak", "glow")):
+        priorities.update({"shape_light_break", "soft_highlight_rolloff"})
+    if any(token in visual_anchor for token in ("cloud", "storm", "overcast")):
+        priorities.add("deepen_cloud_weight")
+    if any(token in visual_anchor for token in ("fog", "mist", "haze")):
+        priorities.add("soften_mist")
+    if any(token in visual_anchor for token in ("field", "grass", "rural", "green")):
+        priorities.add("natural_greens")
+    if any(token in visual_anchor for token in _WATER_ANCHOR_TERMS):
+        priorities.add("enhance_water_depth")
+    return priorities
 
 
 _VISUAL_MOVE_REGISTRY: dict[str, dict[str, str]] = {
@@ -391,14 +505,12 @@ def _infer_moves_from_vision(editing_vision: dict[str, Any] | None) -> list[str]
     if not editing_vision:
         return list(_DEFAULT_VISION_MOVES)
 
-    combined_text = " ".join(
-        [
-            str(editing_vision.get("emotional_goal", "")),
-            str(editing_vision.get("visual_anchor", "")),
-            " ".join(_string_list(editing_vision.get("preserve"))),
-            " ".join(_string_list(editing_vision.get("avoid"))),
-        ]
-    ).lower()
+    emotional_goal = str(editing_vision.get("emotional_goal", ""))
+    visual_anchor = str(editing_vision.get("visual_anchor", ""))
+    preserve_text = " ".join(_string_list(editing_vision.get("preserve")))
+    avoid_text = " ".join(_string_list(editing_vision.get("avoid")))
+    combined_text = " ".join([emotional_goal, visual_anchor, preserve_text, avoid_text]).lower()
+    visual_anchor_text = visual_anchor.lower()
 
     moves: list[str] = []
     if any(token in combined_text for token in ("fog", "mist", "haze")):
@@ -407,7 +519,7 @@ def _infer_moves_from_vision(editing_vision: dict[str, Any] | None) -> list[str]
         moves.append("deepen_cloud_weight")
     if any(token in combined_text for token in ("sun", "light break", "lightbreak", "hope", "glow")):
         moves.append("shape_light_break")
-    if any(token in combined_text for token in ("ocean", "water", "bay", "shore")):
+    if any(token in visual_anchor_text for token in _WATER_ANCHOR_TERMS):
         moves.append("enhance_water_depth")
     if any(token in combined_text for token in ("field", "grass", "rural", "green")):
         moves.append("natural_greens")
@@ -438,7 +550,11 @@ def resolve_visual_moves(
         for move_name in _DEFAULT_VISION_MOVES:
             if move_name not in resolved:
                 resolved.append(move_name)
-    return resolved
+    return _filter_moves_by_vision(
+        resolved,
+        editing_vision=editing_vision,
+        explicit_moves=set(explicit_moves),
+    )
 
 
 def visual_moves_to_parameters(
@@ -448,9 +564,24 @@ def visual_moves_to_parameters(
 ) -> dict[str, Any]:
     """Convert high-level visual moves into safe technique-composed parameters."""
     _normalize_intensity(intensity)
+    explicit_moves = _filtered_moves(_string_list((intent_profile or {}).get("editing_moves")))
+    filtered_moves = _filter_moves_by_vision(
+        moves,
+        editing_vision=intent_profile,
+        explicit_moves=set(explicit_moves),
+    )
+    blocked_tags = _blocked_risk_tags(intent_profile)
     technique_names: list[str] = []
-    for move_name in _filtered_moves(moves):
-        technique_names.extend(_MOVE_TO_TECHNIQUES.get(move_name, []))
+    for move_name in _filtered_moves(filtered_moves):
+        allow_blocked_tags = (
+            move_name in {"enhance_water_depth", "clean_sky"}
+            and move_name in explicit_moves
+            and _is_water_anchor(intent_profile)
+        )
+        for technique_name in _MOVE_TO_TECHNIQUES.get(move_name, []):
+            if blocked_tags and (set(technique_risk_tags(technique_name)) & blocked_tags) and not allow_blocked_tags:
+                continue
+            technique_names.append(technique_name)
     merged = combine_techniques(technique_names)
     return merged["parameters"]
 
@@ -487,12 +618,38 @@ def _lighter_intensity(intensity: str) -> str:
 def _pick_support_move(
     base_moves: list[str],
     candidate_pool: tuple[str, ...],
-    avoid_text: str,
+    editing_vision: dict[str, Any],
 ) -> str | None:
     """Choose one support move that is not already present."""
+    explicit_moves = set(_filtered_moves(_string_list(editing_vision.get("editing_moves"))))
+    blocked_tags = _blocked_risk_tags(editing_vision)
+    preferred = _anchor_priority_moves(editing_vision)
+
     for move_name in candidate_pool:
-        if move_name not in base_moves and move_name not in avoid_text:
-            return move_name
+        if move_name in base_moves:
+            continue
+        if move_name not in preferred:
+            continue
+        if _move_conflicts_with_vision(
+            move_name,
+            editing_vision=editing_vision,
+            blocked_tags=blocked_tags,
+            explicit_moves=explicit_moves,
+        ):
+            continue
+        return move_name
+
+    for move_name in candidate_pool:
+        if move_name in base_moves:
+            continue
+        if _move_conflicts_with_vision(
+            move_name,
+            editing_vision=editing_vision,
+            blocked_tags=blocked_tags,
+            explicit_moves=explicit_moves,
+        ):
+            continue
+        return move_name
     return None
 
 
@@ -507,26 +664,26 @@ def build_vision_candidate_specs(
         raise ValueError(validation_error)
 
     resolved_moves = resolve_visual_moves(editing_vision)
-    avoid_text = " ".join(_string_list(editing_vision.get("avoid"))).lower()
     preserve_values = _string_list(editing_vision.get("preserve"))
     emotional_goal = str(editing_vision.get("emotional_goal", "faithful vision-first refinement")).strip()
     visual_anchor = str(editing_vision.get("visual_anchor", "the image's main anchor")).strip()
 
     faithful_moves = resolved_moves[: min(4, len(resolved_moves))]
-    faithful_support = _pick_support_move(faithful_moves, _FAITHFUL_SUPPORT_MOVES, avoid_text)
+    faithful_support = _pick_support_move(faithful_moves, _FAITHFUL_SUPPORT_MOVES, editing_vision)
     if faithful_support:
         faithful_moves.append(faithful_support)
 
     expressive_moves = list(resolved_moves)
-    expressive_support = _pick_support_move(expressive_moves, _EXPRESSIVE_SUPPORT_MOVES, avoid_text)
+    expressive_support = _pick_support_move(expressive_moves, _EXPRESSIVE_SUPPORT_MOVES, editing_vision)
     if expressive_support:
         expressive_moves.append(expressive_support)
 
     experiment_moves = list(resolved_moves)
-    experiment_support = _pick_support_move(experiment_moves, _EXPERIMENT_SUPPORT_MOVES, avoid_text)
+    experiment_support = _pick_support_move(experiment_moves, _EXPERIMENT_SUPPORT_MOVES, editing_vision)
     if experiment_support:
         experiment_moves.append(experiment_support)
-    if "calm_phone_filter_look" in avoid_text and "calm_phone_filter_look" not in experiment_moves:
+    avoid_text = _editing_vision_avoid_text(editing_vision)
+    if "phone filter" in avoid_text and "calm_phone_filter_look" not in experiment_moves:
         experiment_moves.append("calm_phone_filter_look")
 
     return [

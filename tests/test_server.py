@@ -293,6 +293,45 @@ class TestEditorialWorkflowTools:
             assert profile.get("ColorToning", "Method", "") == ""
             assert profile.get("SharpenMicro", "Uniformity", "") == ""
 
+    async def test_generate_vision_candidates_rural_vision_avoids_blue_split_profiles(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await generate_vision_candidates(
+            mock_ctx,
+            str(raw_file),
+            "vision_frame",
+            editing_vision={
+                "emotional_goal": "mysterious rural cloud mood with hopeful light",
+                "visual_anchor": "sunlight breaking through over the fields under heavy clouds",
+                "supporting_elements": ["waterline"],
+                "preserve": ["fog", "cloud weight", "soft natural light"],
+                "avoid": ["fake orange/blue grade", "yellow/blue split", "generic postcard brightness"],
+                "danger_notes": ["no synthetic blue", "no phone filter look"],
+                "editing_moves": [
+                    "shape_light_break",
+                    "deepen_cloud_weight",
+                    "soften_mist",
+                    "gentle_tonal_separation",
+                    "natural_greens",
+                ],
+            },
+        )
+        assert "error" not in result
+        assert [candidate["candidate_name"] for candidate in result["candidates"]] == [
+            "faithful_refinement",
+            "expressive_refinement",
+            "restrained_experiment",
+        ]
+
+        from rawtherapee_mcp.pp3_parser import PP3Profile
+
+        for candidate in result["candidates"]:
+            profile = PP3Profile()
+            profile.load(Path(candidate["profile_path"]))
+            assert profile.get("HSV Equalizer", "VCurve", "") == ""
+            assert "enhance_water_depth" not in candidate["visual_moves_used"]
+
     async def test_generate_vision_candidates_rejects_unfilled_contract(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
@@ -315,6 +354,7 @@ class TestEditorialWorkflowTools:
         assert "intent_alignment_score" in result["scoring_rubric"]
         assert "preserved_scene_value_score" in result["scoring_rubric"]
         assert "harmful_overcorrection_penalty" in result["scoring_rubric"]
+        assert "color_split_penalty" in result["scoring_rubric"]
         assert "wrong_standard_warning" in result["scoring_rubric"]
         assert any("only changes exposure/warmth/saturation" in r for r in result["next_action_rules"])
         assert result["minimum_export_threshold"]["core_score_average_min"] == 7.0
@@ -333,6 +373,7 @@ class TestEditorialWorkflowTools:
         assert "editing_vision" in result
         assert "visual_anchor_score" in result["scoring_rubric"]
         assert "vision_alignment_score" in result["scoring_rubric"]
+        assert result["intent_standard"]["primary_intent_category"] != "clean_portrait"
 
     async def test_create_curation_plan(self, mock_ctx, tmp_path):
         (tmp_path / "a.cr2").write_bytes(b"raw")

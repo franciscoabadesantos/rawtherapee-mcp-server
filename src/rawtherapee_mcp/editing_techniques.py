@@ -23,6 +23,7 @@ class TechniqueDefinition(TypedDict):
     purpose: str
     parameters: ParameterSet
     risk_note: str
+    risk_tags: list[str]
     when_to_use: list[str]
     when_to_avoid: list[str]
 
@@ -42,6 +43,7 @@ def _make_technique(
     purpose: str,
     parameters: ParameterSet,
     risk_note: str,
+    risk_tags: list[str] | None = None,
     when_to_use: list[str] | None = None,
     when_to_avoid: list[str] | None = None,
 ) -> TechniqueDefinition:
@@ -50,6 +52,7 @@ def _make_technique(
         "purpose": purpose,
         "parameters": parameters,
         "risk_note": risk_note,
+        "risk_tags": risk_tags or [],
         "when_to_use": when_to_use or [],
         "when_to_avoid": when_to_avoid or [],
     }
@@ -100,6 +103,7 @@ TECHNIQUE_REGISTRY: dict[str, TechniqueDefinition] = {
             }
         },
         risk_note="Can look gritty if combined with excessive sharpening.",
+        risk_tags=["color_presence", "generic_pop"],
     ),
     "soft_highlight_rolloff": _make_technique(
         name="soft_highlight_rolloff",
@@ -184,12 +188,14 @@ TECHNIQUE_REGISTRY: dict[str, TechniqueDefinition] = {
         purpose="Strengthen blue presence while avoiding synthetic cyan.",
         parameters={"hsv_equalizer": {"enabled": True, "s_curve": _BLUE_S_CURVE, "v_curve": _BLUE_S_CURVE}},
         risk_note="Can look unreal on non-blue-dominant scenes.",
+        risk_tags=["cyan_shift", "blue_split", "synthetic_blue"],
     ),
     "natural_green_compression": _make_technique(
         name="natural_green_compression",
         purpose="Compress neon greens into believable foliage tones.",
         parameters={"hsv_equalizer": {"enabled": True, "h_curve": _GREEN_SOFT_CURVE, "s_curve": _GREEN_SOFT_CURVE}},
         risk_note="Can desaturate fresh foliage if overused.",
+        risk_tags=["hue_shift", "green_shift"],
     ),
     "reduce_green_gray_cast_safe": _make_technique(
         name="reduce_green_gray_cast_safe",
@@ -215,6 +221,7 @@ TECHNIQUE_REGISTRY: dict[str, TechniqueDefinition] = {
             }
         },
         risk_note="Can still drift warm on heavily tungsten scenes.",
+        risk_tags=["warm_shift", "orange_shift"],
     ),
     "clean_neutral_balance": _make_technique(
         name="clean_neutral_balance",
@@ -264,6 +271,15 @@ def technique_to_parameters(technique_name: str) -> ParameterSet:
         msg = f"Unknown editing technique: {technique_name}"
         raise KeyError(msg)
     return deepcopy(technique["parameters"])
+
+
+def technique_risk_tags(technique_name: str) -> list[str]:
+    """Return risk tags for one technique."""
+    technique = TECHNIQUE_REGISTRY.get(technique_name)
+    if technique is None:
+        msg = f"Unknown editing technique: {technique_name}"
+        raise KeyError(msg)
+    return deepcopy(technique["risk_tags"])
 
 
 def combine_techniques(technique_names: list[str]) -> CombinedTechniques:

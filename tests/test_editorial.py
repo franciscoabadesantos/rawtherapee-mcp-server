@@ -209,8 +209,37 @@ class TestBuildCritiqueGate:
         assert "preservation_score" in rubric
         assert "distraction_control_score" in rubric
         assert "generic_preset_penalty" in rubric
+        assert "color_split_penalty" in rubric
         assert "vision_alignment_score" in rubric
         assert any("strengthen the visual anchor" in answer for answer in gate["required_llm_answers"])
+
+    def test_editing_vision_landscape_does_not_default_to_clean_portrait(self):
+        gate = build_critique_gate(
+            "preview.jpg",
+            candidate_name="cand1",
+            intended_style="faithful_refinement",
+            editing_vision={
+                "emotional_goal": "mysterious rural cloud mood with hopeful light",
+                "visual_anchor": "sunlight breaking through over the fields under heavy clouds",
+                "preserve": ["mist", "cloud weight"],
+                "avoid": ["fake orange/blue grade"],
+            },
+        )
+        assert gate["intent_standard"]["primary_intent_category"] == "atmosphere_memory"
+
+    def test_editing_vision_color_split_avoid_adds_fail_rule(self):
+        gate = build_critique_gate(
+            "preview.jpg",
+            candidate_name="cand1",
+            intended_style="restrained_experiment",
+            editing_vision={
+                "emotional_goal": "storm mood",
+                "visual_anchor": "light over fields",
+                "avoid": ["yellow/blue split"],
+            },
+        )
+        assert any("yellow/blue or cyan/warm split" in item for item in gate["automatic_failure_conditions"])
+        assert any("color_split_penalty is high" in item for item in gate["next_action_rules"])
 
 
 class TestBuildIntentInferenceContract:

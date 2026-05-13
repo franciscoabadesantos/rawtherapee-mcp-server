@@ -46,7 +46,14 @@ class TestTechniqueRegistry:
     def test_registry_exposes_expected_risk_tags(self):
         assert set(technique_risk_tags("controlled_blue_presence")) == {"cyan_shift", "blue_split", "synthetic_blue"}
         assert set(technique_risk_tags("skin_safe_warmth")) == {"warm_shift", "orange_shift"}
-        assert set(technique_risk_tags("natural_green_compression")) == {"hue_shift", "green_shift"}
+        assert set(technique_risk_tags("natural_green_compression")) == {"green_shift"}
+
+    def test_natural_green_compression_does_not_apply_hue_curve(self):
+        params = technique_to_parameters("natural_green_compression")
+        hsv_equalizer = params["hsv_equalizer"]
+        assert hsv_equalizer["enabled"] is True
+        assert "h_curve" not in hsv_equalizer
+        assert "s_curve" in hsv_equalizer
 
 
 class TestCombineTechniques:

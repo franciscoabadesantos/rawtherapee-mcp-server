@@ -193,9 +193,9 @@ TECHNIQUE_REGISTRY: dict[str, TechniqueDefinition] = {
     "natural_green_compression": _make_technique(
         name="natural_green_compression",
         purpose="Compress neon greens into believable foliage tones.",
-        parameters={"hsv_equalizer": {"enabled": True, "h_curve": _GREEN_SOFT_CURVE, "s_curve": _GREEN_SOFT_CURVE}},
-        risk_note="Can desaturate fresh foliage if overused.",
-        risk_tags=["hue_shift", "green_shift"],
+        parameters={"hsv_equalizer": {"enabled": True, "s_curve": _GREEN_SOFT_CURVE}},
+        risk_note="Can mute fresh foliage if overused.",
+        risk_tags=["green_shift"],
     ),
     "reduce_green_gray_cast_safe": _make_technique(
         name="reduce_green_gray_cast_safe",

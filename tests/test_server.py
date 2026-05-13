@@ -342,6 +342,7 @@ class TestEditorialWorkflowTools:
         for candidate in result["candidates"]:
             profile = PP3Profile()
             profile.load(Path(candidate["profile_path"]))
+            assert profile.get("HSV Equalizer", "HCurve", "") == ""
             assert profile.get("HSV Equalizer", "VCurve", "") == ""
             assert "enhance_water_depth" not in candidate["visual_moves_used"]
             assert "enhance_water_depth" in candidate["visual_moves_blocked"] or "enhance_water_depth" not in candidate[

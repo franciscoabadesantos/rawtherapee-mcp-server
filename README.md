@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/rawtherapee-mcp-server)](https://pypi.org/project/rawtherapee-mcp-server/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for AI-assisted RAW photo development via [RawTherapee](https://rawtherapee.com/) CLI. Provides **54 tools** for profile generation, image processing, visual previews, batch operations, device presets, luminance-based local adjustments, lens correction, film simulation LUTs, profile inheritance, metadata privacy, and opinionated editorial workflows.
+Cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for AI-assisted RAW photo development via [RawTherapee](https://rawtherapee.com/) CLI. Provides **57 tools** for profile generation, image processing, visual previews, batch operations, device presets, luminance-based local adjustments, lens correction, film simulation LUTs, profile inheritance, metadata privacy, and opinionated editorial workflows.
 
 **What makes it unique:** The LLM can *see* the photos it's editing. Preview tools return inline Base64 images via MCP's ImageContent protocol, creating a visual feedback loop where the AI analyzes the image, adjusts settings, previews the result, and iterates — just like a human editor.
 
@@ -409,13 +409,49 @@ Recommended sequence:
 
 1. `preview_raw`
 2. `infer_photo_intent`
-3. `create_editorial_brief`
-4. `generate_editorial_candidates`
+3. `create_editing_vision`
+4. `create_editorial_brief`
 5. `preview_raw` or `preview_before_after`
-6. `critique_gate`
-7. `adjust_profile` (if critique says refine)
-8. Preview again
-9. `process_raw` only if the candidate clears threshold
+6. `generate_vision_candidates` or `generate_editorial_candidates`
+7. `critique_gate`
+8. `adjust_profile` (if critique says refine)
+9. Preview again
+10. `process_raw` only if the candidate clears threshold
+
+## Visual Intention Editing Workflow
+
+The system is moving from preset generation toward vision-first editing. The model should not ask, "Which RawTherapee feature should I use?" It should ask, "What should this image become?" Then it should choose safe editing moves to get there.
+
+- Decide what matters in the frame before deciding how to edit it.
+- Use high-level artistic moves, not a giant database of RawTherapee features.
+- Preserve the emotional anchor even when the technically "cleaner" version is less truthful.
+- Keep using the preview and critique loop. The tools still rely on the MCP client/LLM to visually inspect the image.
+
+Recommended vision-first sequence:
+
+1. `preview_raw`
+2. `infer_photo_intent`
+3. `create_editing_vision`
+4. `create_editorial_brief` with `inferred_intent` and `editing_vision`
+5. `generate_vision_candidates`
+6. Preview all three candidates
+7. `critique_gate` with `editing_vision`
+8. Refine the best candidate using the same visual moves
+9. Export, proof, or reject honestly
+
+Visual move examples:
+
+- Ocean is the emotional anchor: `enhance_water_depth`, `gentle_tonal_separation`, `reduce_distractions`
+- Sunset memory: `warm_memory`, `preserve_silhouette`, `soft_highlight_rolloff`
+- Rural fog with hopeful sunlight: `shape_light_break`, `soften_mist`, `deepen_cloud_weight`
+- Event photo: `preserve_event_authenticity`, `lift_readability`, `reduce_distractions`
+
+Safety notes:
+
+- Known unsafe RawTherapee settings remain disabled for autonomous defaults.
+- `SharpenMicro.Uniformity` is not emitted.
+- `ColorToning Method=Lab` is not emitted.
+- RawTherapee limitations still apply. No object removal, generative retouching, or semantic masks.
 
 Example prompts:
 
@@ -459,10 +495,11 @@ Recommended intent-aware sequence:
 
 1. `preview_raw`
 2. `infer_photo_intent`
-3. `create_editorial_brief` with `inferred_intent`
-4. `generate_editorial_candidates`
+3. `create_editing_vision`
+4. `create_editorial_brief` with `inferred_intent`
 5. Preview candidates
-6. `critique_gate` with `inferred_intent` / `critique_standard`
+6. `generate_vision_candidates` or `generate_editorial_candidates`
+7. `critique_gate` with `inferred_intent` / `critique_standard` / `editing_vision`
 7. refine/export/proof/reject
 
 ## Updating
@@ -529,7 +566,7 @@ Compare against [CHANGELOG.md](CHANGELOG.md). If the version string is correct b
 
 Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/releases) for full changelogs.
 
-## Available Tools (54)
+## Available Tools (57)
 
 ### Discovery & Configuration (5)
 
@@ -541,13 +578,16 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `list_raw_files` | Scan a directory for supported RAW files |
 | `list_output_files` | List processed output files in the output directory |
 
-### Opinionated Editorial Workflow (5)
+### Opinionated Editorial Workflow (8)
 
 | Tool | Description |
 |------|-------------|
 | `infer_photo_intent` | Build a structured intent-inference contract before editing (LLM fills after preview inspection) |
+| `create_editing_vision` | Build a structured visual-intention contract before candidate generation |
+| `list_visual_editing_moves` | List the compact palette of safe, high-level artistic editing moves |
 | `create_editorial_brief` | Build a strict editorial brief with critique/reject/export rules |
 | `generate_editorial_candidates` | Generate 3 distinct PP3 candidates (clean_editorial, warm_travel, cinematic_soft) |
+| `generate_vision_candidates` | Generate 3 safe candidates from an editing vision instead of fixed presets |
 | `critique_gate` | Return the scoring rubric and strict pass/fail contract after preview inspection |
 | `create_curation_plan` | Plan batch curation into reject/proof_only/edit_candidate/strong_keeper before editing |
 

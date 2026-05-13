@@ -27,11 +27,12 @@ SUPPORTED_EDITORIAL_STYLES = (
 )
 
 _DEFAULT_RECOMMENDED_WORKFLOW = [
+    "create_editing_vision",
     "create_editorial_brief",
-    "generate_editorial_candidates",
+    "generate_vision_candidates or generate_editorial_candidates",
     "preview_raw or preview_before_after",
     "critique_gate",
-    "adjust_profile (only when critique says refine)",
+    "adjust_profile or refine using visual moves (only when critique says refine)",
     "preview again",
     "process_raw (only if critique threshold is passed)",
 ]
@@ -515,6 +516,7 @@ def build_intent_inference_contract(
         },
         "next_recommended_tools": [
             "preview_raw",
+            "create_editing_vision",
             "create_editorial_brief",
             "generate_editorial_candidates",
             "critique_gate",
@@ -529,6 +531,7 @@ def build_editorial_brief(
     style: str,
     output_goal: str,
     inferred_intent: dict[str, Any] | None = None,
+    editing_vision: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a strict editing brief for the LLM's editorial loop."""
@@ -610,6 +613,7 @@ def build_editorial_brief(
         "recommended_workflow": [
             "preview_raw",
             "infer_photo_intent",
+            "create_editing_vision",
             *_DEFAULT_RECOMMENDED_WORKFLOW,
         ],
         "required_preview_loop_steps": [
@@ -652,6 +656,24 @@ def build_editorial_brief(
 
     if metadata:
         brief["metadata_context"] = metadata
+
+    if editing_vision:
+        vision_preserve = _string_list(editing_vision.get("preserve"))
+        vision_avoid = _string_list(editing_vision.get("avoid"))
+        if vision_preserve:
+            brief["intent_preservation_targets"] = [
+                *brief["intent_preservation_targets"],
+                *vision_preserve,
+            ]
+            brief["export_criteria"].append("Preserves the editing-vision anchor, mood, and preservation targets.")
+        if vision_avoid:
+            brief["what_to_avoid"] = [*brief["what_to_avoid"], *vision_avoid]
+        brief["editing_vision"] = editing_vision
+        brief["visual_intention_priority"] = [
+            "Strengthen the chosen visual anchor before chasing broad stylization.",
+            "Deemphasize distractions rather than globally brightening or sharpening everything.",
+            "Reject edits that feel like generic presets instead of serving the image's vision.",
+        ]
 
     return brief
 
@@ -797,6 +819,7 @@ def build_critique_gate(
     intended_style: str,
     inferred_intent: dict[str, Any] | None = None,
     critique_standard: dict[str, Any] | str | None = None,
+    editing_vision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a strict post-preview scoring contract for the LLM."""
     merged_intent: dict[str, Any] | None = None
@@ -827,6 +850,12 @@ def build_critique_gate(
         "professional_polish_score": "0-10",
         "intent_alignment_score": "0-10",
         "preserved_scene_value_score": "0-10",
+        "visual_anchor_score": "0-10",
+        "emotional_goal_score": "0-10",
+        "preservation_score": "0-10",
+        "distraction_control_score": "0-10",
+        "generic_preset_penalty": "0-10",
+        "vision_alignment_score": "0-10",
         "harmful_overcorrection_penalty": "0-10",
         "wrong_standard_warning": "true|false with one-sentence reason",
         "overprocessing_penalty": "0-10",
@@ -881,6 +910,7 @@ def build_critique_gate(
         "intended_style": intended_style,
         "inferred_intent": inferred_intent,
         "critique_standard": critique_standard,
+        "editing_vision": editing_vision,
         "intent_standard": intent_standard,
         "dark_subject_policy": dark_subject_policy,
         "scoring_rubric": scoring_rubric,
@@ -897,6 +927,11 @@ def build_critique_gate(
             "What curve/color-separation decisions are visible (or missing)?",
             "Does this look like a basic phone filter? Why or why not?",
             "Did this edit preserve the scene value and emotional payoff?",
+            "Did the edit strengthen the visual anchor?",
+            "Did it preserve the emotional goal instead of replacing it with a generic preset look?",
+            "What distractions were reduced or left competing?",
+            "Did it destroy anything the image needed to preserve?",
+            "Were any artifacts or rendering failures introduced?",
             "Did any correction remove the reason the photo works?",
             "Does this candidate pass export threshold? If not, why exactly?",
             "What precise adjustment should be applied next (or reject/proof_only)?",

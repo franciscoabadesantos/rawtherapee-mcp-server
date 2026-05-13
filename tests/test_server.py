@@ -21,16 +21,19 @@ from rawtherapee_mcp.server import (
     check_rt_status,
     compare_profiles,
     create_curation_plan,
+    create_editing_vision,
     create_editorial_brief,
     critique_gate,
     export_multi_device,
     generate_editorial_candidates,
+    generate_vision_candidates,
     get_config,
     get_histogram,
     infer_photo_intent,
     interpolate_profiles,
     list_local_adjustments,
     list_raw_files,
+    list_visual_editing_moves,
     preview_before_after,
     preview_exposure_bracket,
     preview_raw,
@@ -158,6 +161,28 @@ class TestEditorialWorkflowTools:
         assert "error" not in result
         assert result["intent_standard"]["primary_intent_category"] == "sunset_silhouette"
 
+    async def test_create_editing_vision_returns_contract(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await create_editing_vision(
+            mock_ctx,
+            str(raw_file),
+            user_intent="hopeful cloud break",
+            context_hint="rural hillside",
+        )
+        assert "error" not in result
+        assert result["file_path"] == str(raw_file)
+        assert "editing_vision_schema" in result
+        assert "generate_vision_candidates" in result["next_recommended_tools"]
+
+    async def test_list_visual_editing_moves_returns_palette(self, mock_ctx):
+        result = await list_visual_editing_moves(mock_ctx)
+
+        assert "moves" in result
+        assert any(move["name"] == "shape_light_break" for move in result["moves"])
+        assert "safety_notes" in result
+
     async def test_generate_editorial_candidates_returns_three_distinct_styles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
@@ -212,6 +237,41 @@ class TestEditorialWorkflowTools:
         assert "error" not in result
         assert len(result["candidates"]) == 3
 
+    async def test_generate_vision_candidates_returns_three_profiles(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await generate_vision_candidates(
+            mock_ctx,
+            str(raw_file),
+            "vision_frame",
+            editing_vision={
+                "emotional_goal": "mysterious rural cloud mood with hopeful light",
+                "visual_anchor": "sunlit fields under heavy clouds",
+                "preserve": ["fog", "cloud weight"],
+                "avoid": ["fake orange/blue grade"],
+                "editing_moves": ["shape_light_break", "deepen_cloud_weight", "soften_mist"],
+            },
+        )
+        assert "error" not in result
+        assert len(result["candidates"]) == 3
+        assert [candidate["candidate_name"] for candidate in result["candidates"]] == [
+            "faithful_refinement",
+            "expressive_refinement",
+            "restrained_experiment",
+        ]
+
+        from rawtherapee_mcp.pp3_parser import PP3Profile
+
+        for candidate in result["candidates"]:
+            assert candidate["visual_moves_used"]
+            assert Path(candidate["profile_path"]).is_file()
+
+            profile = PP3Profile()
+            profile.load(Path(candidate["profile_path"]))
+            assert profile.get("ColorToning", "Method", "") == ""
+            assert profile.get("SharpenMicro", "Uniformity", "") == ""
+
     async def test_critique_gate_returns_rubric_and_threshold(self, mock_ctx):
         result = await critique_gate(mock_ctx, candidate_name="warm_v1", intended_style="warm_travel")
         assert "scoring_rubric" in result
@@ -223,6 +283,21 @@ class TestEditorialWorkflowTools:
         assert "wrong_standard_warning" in result["scoring_rubric"]
         assert any("only changes exposure/warmth/saturation" in r for r in result["next_action_rules"])
         assert result["minimum_export_threshold"]["core_score_average_min"] == 7.0
+
+    async def test_critique_gate_accepts_editing_vision(self, mock_ctx):
+        result = await critique_gate(
+            mock_ctx,
+            candidate_name="vision_v1",
+            intended_style="faithful_refinement",
+            editing_vision={
+                "emotional_goal": "mysterious rural cloud mood with hopeful light",
+                "visual_anchor": "the light break over the fields",
+            },
+        )
+
+        assert "editing_vision" in result
+        assert "visual_anchor_score" in result["scoring_rubric"]
+        assert "vision_alignment_score" in result["scoring_rubric"]
 
     async def test_create_curation_plan(self, mock_ctx, tmp_path):
         (tmp_path / "a.cr2").write_bytes(b"raw")

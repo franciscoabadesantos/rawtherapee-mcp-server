@@ -22,6 +22,7 @@ from fastmcp.utilities.types import Image as MCPImage
 from mcp.types import ImageContent, TextContent
 
 from rawtherapee_mcp import __version__
+from rawtherapee_mcp.advanced_color import merge_parameter_sets
 from rawtherapee_mcp.config import RTConfig, load_config
 from rawtherapee_mcp.device_presets import (
     add_custom_preset,
@@ -73,6 +74,15 @@ from rawtherapee_mcp.profile_hierarchy import create_variant as _create_variant
 from rawtherapee_mcp.profile_hierarchy import list_variants as _list_variants
 from rawtherapee_mcp.profile_hierarchy import propagate_to_variants as _propagate_to_variants
 from rawtherapee_mcp.rt_cli import get_rt_version, run_rt_cli
+from rawtherapee_mcp.visual_intent import (
+    build_editing_vision_contract,
+    build_vision_candidate_specs,
+    resolve_visual_moves,
+    visual_moves_to_parameters,
+)
+from rawtherapee_mcp.visual_intent import (
+    list_visual_editing_moves as build_visual_move_list,
+)
 
 logger = logging.getLogger("rawtherapee_mcp")
 
@@ -507,12 +517,50 @@ async def infer_photo_intent(
 
 
 @mcp.tool()
+async def create_editing_vision(
+    ctx: Context,
+    file_path: str,
+    user_intent: str | None = None,
+    context_hint: str | None = None,
+) -> dict[str, Any]:
+    """Build a structured editing-vision contract before generating candidates.
+
+    This tool does not perform computer vision. The LLM must inspect preview
+    output and fill the contract honestly after looking at the image.
+    Params: file_path, user_intent, context_hint
+    """
+    _ = get_config(ctx)
+    try:
+        raw_path = ensure_existing_file(file_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    return build_editing_vision_contract(
+        str(raw_path),
+        user_intent=user_intent,
+        context_hint=context_hint,
+    )
+
+
+@mcp.tool()
+async def list_visual_editing_moves(ctx: Context) -> dict[str, Any]:
+    """Return the compact palette of safe vision-first editing moves.
+
+    Use this when planning edits in artistic language before translating them
+    into safe PP3 adjustments.
+    """
+    _ = get_config(ctx)
+    return build_visual_move_list()
+
+
+@mcp.tool()
 async def create_editorial_brief(
     ctx: Context,
     file_path: str,
     intent: str | None = None,
     inferred_intent: dict[str, Any] | None = None,
     intent_profile: dict[str, Any] | None = None,
+    editing_vision: dict[str, Any] | None = None,
     style: str = "clean_editorial",
     output_goal: str = "post_worthy",
 ) -> dict[str, Any]:
@@ -540,6 +588,7 @@ async def create_editorial_brief(
         style=style,
         output_goal=output_goal,
         inferred_intent=resolved_intent_profile,
+        editing_vision=editing_vision,
         metadata=metadata,
     )
 
@@ -553,6 +602,7 @@ async def generate_editorial_candidates(
     device_preset: str | None = None,
     inferred_intent: dict[str, Any] | None = None,
     style_direction: str | None = None,
+    editing_vision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate 3 distinct, tasteful editorial PP3 candidates for preview/critique.
 
@@ -591,6 +641,13 @@ async def generate_editorial_candidates(
             style_direction=style_direction,
             rt_version=rt_version,
         )
+        if editing_vision:
+            visual_parameters = visual_moves_to_parameters(
+                resolve_visual_moves(editing_vision),
+                intensity="medium",
+                intent_profile=inferred_intent or editing_vision,
+            )
+            parameters = merge_parameter_sets(parameters, visual_parameters)
 
         try:
             profile, output_path = _generate_profile(
@@ -621,10 +678,90 @@ async def generate_editorial_candidates(
         "device_preset": device_preset,
         "inferred_intent": inferred_intent,
         "style_direction": style_direction,
+        "editing_vision": editing_vision,
         "candidates": candidates,
         "workflow_reminder": (
             "Preview every candidate before exporting. Use critique_gate after visual inspection. "
             "Do not export weak candidates."
+        ),
+    }
+
+
+@mcp.tool()
+async def generate_vision_candidates(
+    ctx: Context,
+    file_path: str,
+    base_name: str,
+    editing_vision: dict[str, Any],
+    intensity: str = "medium",
+    device_preset: str | None = None,
+) -> dict[str, Any]:
+    """Generate 3 safe editorial candidates from high-level visual moves.
+
+    Creates faithful_refinement, expressive_refinement, and restrained_experiment
+    profiles from the editing vision instead of fixed style presets.
+    Params: file_path, base_name, editing_vision, intensity, device_preset
+    """
+    config = get_config(ctx)
+    templates_dir = _get_templates_dir()
+
+    try:
+        raw_path = ensure_existing_file(file_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    preset_dict: dict[str, Any] | None = None
+    if device_preset:
+        preset_dict = get_preset(device_preset, config.custom_templates_dir)
+        if preset_dict is None:
+            return {"error": f"Device preset '{device_preset}' not found"}
+
+    source_dimensions = get_effective_dimensions(raw_path)
+    candidate_specs = build_vision_candidate_specs(editing_vision, intensity=intensity)
+    candidates: list[dict[str, Any]] = []
+
+    for candidate_spec in candidate_specs:
+        candidate_name = str(candidate_spec["candidate_name"])
+        candidate_slug = safe_slug(f"{base_name}_{candidate_name}")
+        visual_moves_used = list(candidate_spec["visual_moves_used"])
+        parameters = visual_moves_to_parameters(
+            visual_moves_used,
+            intensity=str(candidate_spec["parameter_intensity"]),
+            intent_profile=editing_vision,
+        )
+
+        try:
+            profile, output_path = _generate_profile(
+                name=candidate_slug,
+                base_template="neutral",
+                parameters=parameters,
+                device_preset=preset_dict,
+                templates_dir=templates_dir,
+                custom_templates_dir=config.custom_templates_dir,
+            )
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+
+        if preset_dict:
+            src_w, src_h = source_dimensions
+            if src_w > 0 and src_h > 0:
+                apply_device_crop(profile, preset_dict, src_w, src_h)
+                profile.save(output_path)
+
+        descriptor = dict(candidate_spec)
+        descriptor["profile_path"] = str(output_path)
+        candidates.append(descriptor)
+
+    return {
+        "file_path": str(raw_path),
+        "base_name": base_name,
+        "intensity": intensity,
+        "device_preset": device_preset,
+        "editing_vision": editing_vision,
+        "candidates": candidates,
+        "workflow_reminder": (
+            "Preview all three candidates, critique them against the editing vision, "
+            "and export only when the chosen candidate clearly fits the vision."
         ),
     }
 
@@ -637,6 +774,7 @@ async def critique_gate(
     preview_path: str | None = None,
     inferred_intent: dict[str, Any] | None = None,
     critique_standard: dict[str, Any] | str | None = None,
+    editing_vision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a strict post-preview rubric contract for scoring and gating export.
 
@@ -656,6 +794,7 @@ async def critique_gate(
         intended_style=intended_style,
         inferred_intent=inferred_intent,
         critique_standard=critique_standard,
+        editing_vision=editing_vision,
     )
     if warnings:
         result["warnings"] = warnings

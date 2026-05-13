@@ -76,6 +76,23 @@ class TestBuildEditorialBrief:
         assert "preserve the reason this photo works" in " ".join(brief["visual_critique_checklist"]).lower()
         assert any("over-lift intentional darkness" in item for item in brief["llm_instructions"])
 
+    def test_includes_editing_vision_targets_when_present(self):
+        brief = build_editorial_brief(
+            "photo.cr2",
+            intent=None,
+            style="clean_editorial",
+            output_goal="post_worthy",
+            editing_vision={
+                "preserve": ["fog", "soft natural light"],
+                "avoid": ["fake orange/blue grade"],
+            },
+        )
+
+        assert "editing_vision" in brief
+        assert "fog" in brief["intent_preservation_targets"]
+        assert "fake orange/blue grade" in brief["what_to_avoid"]
+        assert any("editing-vision anchor" in item for item in brief["export_criteria"])
+
 
 class TestEditorialCandidateParameters:
     """Tests for candidate parameter generation."""
@@ -153,6 +170,26 @@ class TestBuildCritiqueGate:
         assert gate["intent_standard"]["subject_clarity_priority"] == "critical"
         assert any("too dark or muddy for this intent" in item for item in gate["automatic_failure_conditions"])
         assert any("still too dark or muddy" in rule for rule in gate["next_action_rules"])
+
+    def test_editing_vision_adds_vision_scoring_fields(self):
+        gate = build_critique_gate(
+            "preview.jpg",
+            candidate_name="cand1",
+            intended_style="clean_editorial",
+            editing_vision={
+                "emotional_goal": "mysterious rural cloud mood with hopeful light",
+                "visual_anchor": "light over fields",
+            },
+        )
+
+        rubric = gate["scoring_rubric"]
+        assert "visual_anchor_score" in rubric
+        assert "emotional_goal_score" in rubric
+        assert "preservation_score" in rubric
+        assert "distraction_control_score" in rubric
+        assert "generic_preset_penalty" in rubric
+        assert "vision_alignment_score" in rubric
+        assert any("strengthen the visual anchor" in answer for answer in gate["required_llm_answers"])
 
 
 class TestBuildIntentInferenceContract:

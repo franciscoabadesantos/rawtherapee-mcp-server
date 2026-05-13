@@ -310,6 +310,8 @@ class TestEditorialWorkflowTools:
             profile.load(Path(candidate["profile_path"]))
             assert profile.get("ColorToning", "Method", "") == ""
             assert profile.get("SharpenMicro", "Uniformity", "") == ""
+            assert profile.get("Local Contrast", "Amount", "") == ""
+            assert "local_contrast" not in candidate["merged_parameter_summary"]["groups"]
 
     async def test_generate_vision_candidates_rural_vision_avoids_blue_split_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

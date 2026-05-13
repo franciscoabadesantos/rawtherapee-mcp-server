@@ -361,16 +361,8 @@ def sanitize_autonomous_parameters(
 
     local_contrast = sanitized.get("local_contrast")
     if isinstance(local_contrast, dict):
-        amount = local_contrast.get("amount")
-        clamped_amount = _clamp_numeric(amount, minimum=0, maximum=20)
-        if clamped_amount != amount:
-            local_contrast["amount"] = clamped_amount
-            applied.append("Clamped 'local_contrast.amount' to <= 20")
-        radius = local_contrast.get("radius")
-        clamped_radius = _clamp_numeric(radius, minimum=5, maximum=120)
-        if clamped_radius != radius:
-            local_contrast["radius"] = clamped_radius
-            applied.append("Clamped 'local_contrast.radius' to <= 120")
+        sanitized.pop("local_contrast", None)
+        applied.append("Removed 'local_contrast' (autonomous Local Contrast disabled due to artifact risk)")
 
     exposure = sanitized.get("exposure")
     if isinstance(exposure, dict):

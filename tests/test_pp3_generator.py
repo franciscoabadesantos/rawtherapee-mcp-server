@@ -283,7 +283,7 @@ class TestSanitizeAutonomousParameters:
         assert "uniformity" not in sanitized["microcontrast"]
         assert any("ColorToning" in note for note in notes)
 
-    def test_clamps_aggressive_sharpening_local_contrast(self):
+    def test_blocks_autonomous_local_contrast_and_clamps_other_aggressive_settings(self):
         sanitized, _ = sanitize_autonomous_parameters(
             {
                 "sharpening": {"amount": 300, "radius": 2.4},
@@ -293,8 +293,7 @@ class TestSanitizeAutonomousParameters:
         )
         assert sanitized["sharpening"]["amount"] == 180
         assert sanitized["sharpening"]["radius"] == 1.6
-        assert sanitized["local_contrast"]["amount"] == 20
-        assert sanitized["local_contrast"]["radius"] == 120
+        assert "local_contrast" not in sanitized
         assert sanitized["exposure"]["contrast"] == 30
 
 

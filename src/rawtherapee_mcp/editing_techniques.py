@@ -252,9 +252,9 @@ TECHNIQUE_REGISTRY: dict[str, TechniqueDefinition] = {
         purpose="Improve micro detail perception using conservative structure settings.",
         parameters={
             "microcontrast": {"enabled": True, "strength": 8},
-            "local_contrast": {"enabled": True, "radius": 58, "amount": 6, "darkness": 35, "lightness": 45},
         },
-        risk_note="May introduce slight harshness if stacked with strong sharpening.",
+        risk_note="Keeps autonomous structure work off RawTherapee Local Contrast due to artifact risk.",
+        risk_tags=["local_contrast_artifact"],
     ),
 }
 

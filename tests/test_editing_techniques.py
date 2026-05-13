@@ -47,6 +47,7 @@ class TestTechniqueRegistry:
         assert set(technique_risk_tags("controlled_blue_presence")) == {"cyan_shift", "blue_split", "synthetic_blue"}
         assert set(technique_risk_tags("skin_safe_warmth")) == {"warm_shift", "orange_shift"}
         assert set(technique_risk_tags("natural_green_compression")) == {"green_shift"}
+        assert set(technique_risk_tags("gentle_structure_without_crunch")) == {"local_contrast_artifact"}
 
     def test_natural_green_compression_does_not_apply_hue_curve(self):
         params = technique_to_parameters("natural_green_compression")
@@ -54,6 +55,11 @@ class TestTechniqueRegistry:
         assert hsv_equalizer["enabled"] is True
         assert "h_curve" not in hsv_equalizer
         assert "s_curve" in hsv_equalizer
+
+    def test_gentle_structure_without_crunch_does_not_emit_local_contrast(self):
+        params = technique_to_parameters("gentle_structure_without_crunch")
+        assert params["microcontrast"]["enabled"] is True
+        assert "local_contrast" not in params
 
 
 class TestCombineTechniques:

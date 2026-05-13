@@ -199,6 +199,12 @@ class TestEditorialWorkflowTools:
         assert "parameters" in result
         assert "color_balance" not in result["parameters"]
         assert "split_toning" not in result["parameters"]
+        assert result["visual_moves_used"]
+        assert result["techniques_used"]
+        assert "overwritten_parameters" in result
+        assert "visual_moves_blocked" in result
+        assert "techniques_blocked" in result
+        assert "blocked_risk_tags" in result
         assert "safety_sanitizations_applied" in result
 
     async def test_generate_editorial_candidates_returns_three_distinct_styles(self, mock_ctx, tmp_path):
@@ -285,6 +291,13 @@ class TestEditorialWorkflowTools:
 
         for candidate in result["candidates"]:
             assert candidate["visual_moves_used"]
+            assert "visual_moves_blocked" in candidate
+            assert "techniques_used" in candidate
+            assert "techniques_blocked" in candidate
+            assert "unknown_techniques" in candidate
+            assert "overwritten_parameters" in candidate
+            assert "blocked_risk_tags" in candidate
+            assert "merged_parameter_summary" in candidate
             assert "safety_sanitizations_applied" in candidate
             assert Path(candidate["profile_path"]).is_file()
 
@@ -331,6 +344,12 @@ class TestEditorialWorkflowTools:
             profile.load(Path(candidate["profile_path"]))
             assert profile.get("HSV Equalizer", "VCurve", "") == ""
             assert "enhance_water_depth" not in candidate["visual_moves_used"]
+            assert "enhance_water_depth" in candidate["visual_moves_blocked"] or "enhance_water_depth" not in candidate[
+                "moves_requested"
+            ]
+            assert "controlled_blue_presence" in candidate["techniques_blocked"] or "controlled_blue_presence" not in (
+                candidate["techniques_used"]
+            )
 
     async def test_generate_vision_candidates_rejects_unfilled_contract(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

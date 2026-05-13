@@ -557,33 +557,77 @@ def resolve_visual_moves(
     )
 
 
+def visual_moves_to_parameter_plan(
+    moves: list[str],
+    intensity: str = "medium",
+    intent_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a full debug plan for visual-move to parameter composition."""
+    _normalize_intensity(intensity)
+    moves_requested = list(moves)
+    explicit_moves = _filtered_moves(_string_list((intent_profile or {}).get("editing_moves")))
+    blocked_tags = _blocked_risk_tags(intent_profile)
+    filtered_requested_moves = _filtered_moves(moves_requested)
+
+    visual_moves_used: list[str] = []
+    visual_moves_blocked: list[str] = []
+    techniques_requested: list[str] = []
+    techniques_blocked: list[str] = []
+    technique_names: list[str] = []
+
+    for move_name in filtered_requested_moves:
+        move_techniques = _MOVE_TO_TECHNIQUES.get(move_name, [])
+        techniques_requested.extend(move_techniques)
+
+        if _move_conflicts_with_vision(
+            move_name,
+            editing_vision=intent_profile,
+            blocked_tags=blocked_tags,
+            explicit_moves=set(explicit_moves),
+        ):
+            visual_moves_blocked.append(move_name)
+            techniques_blocked.extend(move_techniques)
+            continue
+
+        visual_moves_used.append(move_name)
+        allow_blocked_tags = (
+            move_name in {"enhance_water_depth", "clean_sky"}
+            and move_name in explicit_moves
+            and _is_water_anchor(intent_profile)
+        )
+        for technique_name in move_techniques:
+            if blocked_tags and (set(technique_risk_tags(technique_name)) & blocked_tags) and not allow_blocked_tags:
+                techniques_blocked.append(technique_name)
+                continue
+            technique_names.append(technique_name)
+
+    merged = combine_techniques(technique_names)
+    return {
+        "moves_requested": moves_requested,
+        "visual_moves_used": visual_moves_used,
+        "visual_moves_blocked": visual_moves_blocked,
+        "techniques_used": merged["techniques_used"],
+        "techniques_blocked": techniques_blocked,
+        "unknown_techniques": merged["unknown_techniques"],
+        "overwritten_parameters": merged["overwritten_parameters"],
+        "blocked_risk_tags": sorted(blocked_tags),
+        "parameters": merged["parameters"],
+    }
+
+
 def visual_moves_to_parameters(
     moves: list[str],
     intensity: str = "medium",
     intent_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Convert high-level visual moves into safe technique-composed parameters."""
-    _normalize_intensity(intensity)
-    explicit_moves = _filtered_moves(_string_list((intent_profile or {}).get("editing_moves")))
-    filtered_moves = _filter_moves_by_vision(
+    plan = visual_moves_to_parameter_plan(
         moves,
-        editing_vision=intent_profile,
-        explicit_moves=set(explicit_moves),
+        intensity=intensity,
+        intent_profile=intent_profile,
     )
-    blocked_tags = _blocked_risk_tags(intent_profile)
-    technique_names: list[str] = []
-    for move_name in _filtered_moves(filtered_moves):
-        allow_blocked_tags = (
-            move_name in {"enhance_water_depth", "clean_sky"}
-            and move_name in explicit_moves
-            and _is_water_anchor(intent_profile)
-        )
-        for technique_name in _MOVE_TO_TECHNIQUES.get(move_name, []):
-            if blocked_tags and (set(technique_risk_tags(technique_name)) & blocked_tags) and not allow_blocked_tags:
-                continue
-            technique_names.append(technique_name)
-    merged = combine_techniques(technique_names)
-    return merged["parameters"]
+    parameters = plan["parameters"]
+    return parameters if isinstance(parameters, dict) else {}
 
 
 def validate_filled_editing_vision(editing_vision: dict[str, Any]) -> str | None:

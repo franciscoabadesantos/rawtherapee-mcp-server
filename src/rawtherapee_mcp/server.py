@@ -89,6 +89,9 @@ from rawtherapee_mcp.visual_intent import (
     list_visual_editing_moves as build_visual_move_list,
 )
 from rawtherapee_mcp.visual_intent import (
+    visual_moves_to_parameter_plan as map_visual_moves_to_parameter_plan,
+)
+from rawtherapee_mcp.visual_intent import (
     visual_moves_to_parameters as map_visual_moves_to_parameters,
 )
 
@@ -278,6 +281,19 @@ def _pp3_text_set_resize(pp3_text: str, resize_settings: dict[str, str]) -> str:
             out.append(f"{key}={value}")
 
     return "\n".join(out)
+
+
+def _summarize_parameter_groups(parameters: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact summary of merged parameter groups and keys."""
+    groups: list[str] = []
+    group_keys: dict[str, list[str]] = {}
+    for group_name in sorted(parameters):
+        value = parameters[group_name]
+        if not isinstance(value, dict):
+            continue
+        groups.append(group_name)
+        group_keys[group_name] = sorted(str(key) for key in value)
+    return {"groups": groups, "group_keys": group_keys}
 
 
 async def _maybe_attach_thumbnail(
@@ -573,20 +589,26 @@ async def visual_moves_to_parameters(
     This wrapper keeps output JSON-serializable and includes safety/debug fields.
     """
     _ = get_config(ctx)
-    raw_parameters = map_visual_moves_to_parameters(
+    parameter_plan = map_visual_moves_to_parameter_plan(
         moves,
         intensity=intensity,
         intent_profile=intent_profile,
     )
-    sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(raw_parameters)
+    sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(parameter_plan["parameters"])
     return {
         "moves": list(moves),
         "intensity": intensity,
         "intent_profile": intent_profile,
+        "moves_requested": parameter_plan["moves_requested"],
+        "visual_moves_used": parameter_plan["visual_moves_used"],
+        "visual_moves_blocked": parameter_plan["visual_moves_blocked"],
+        "techniques_used": parameter_plan["techniques_used"],
+        "techniques_blocked": parameter_plan["techniques_blocked"],
+        "unknown_techniques": parameter_plan["unknown_techniques"],
+        "overwritten_parameters": parameter_plan["overwritten_parameters"],
+        "merge_conflicts": parameter_plan["overwritten_parameters"],
+        "blocked_risk_tags": parameter_plan["blocked_risk_tags"],
         "parameters": sanitized_parameters,
-        "techniques_used": [],
-        "overwritten_parameters": [],
-        "merge_conflicts": [],
         "safety_sanitizations_applied": sanitization_notes,
     }
 
@@ -766,13 +788,13 @@ async def generate_vision_candidates(
     for candidate_spec in candidate_specs:
         candidate_name = str(candidate_spec["candidate_name"])
         candidate_slug = safe_slug(f"{base_name}_{candidate_name}")
-        visual_moves_used = list(candidate_spec["visual_moves_used"])
-        parameters = map_visual_moves_to_parameters(
-            visual_moves_used,
+        visual_moves_requested = list(candidate_spec["visual_moves_used"])
+        parameter_plan = map_visual_moves_to_parameter_plan(
+            visual_moves_requested,
             intensity=str(candidate_spec["parameter_intensity"]),
             intent_profile=editing_vision,
         )
-        sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(parameters)
+        sanitized_parameters, sanitization_notes = sanitize_autonomous_parameters(parameter_plan["parameters"])
 
         try:
             profile, output_path = _generate_profile(
@@ -793,6 +815,15 @@ async def generate_vision_candidates(
                 profile.save(output_path)
 
         descriptor = dict(candidate_spec)
+        descriptor["moves_requested"] = parameter_plan["moves_requested"]
+        descriptor["visual_moves_used"] = parameter_plan["visual_moves_used"]
+        descriptor["visual_moves_blocked"] = parameter_plan["visual_moves_blocked"]
+        descriptor["techniques_used"] = parameter_plan["techniques_used"]
+        descriptor["techniques_blocked"] = parameter_plan["techniques_blocked"]
+        descriptor["unknown_techniques"] = parameter_plan["unknown_techniques"]
+        descriptor["overwritten_parameters"] = parameter_plan["overwritten_parameters"]
+        descriptor["blocked_risk_tags"] = parameter_plan["blocked_risk_tags"]
+        descriptor["merged_parameter_summary"] = _summarize_parameter_groups(parameter_plan["parameters"])
         descriptor["profile_path"] = str(output_path)
         descriptor["safety_sanitizations_applied"] = sanitization_notes
         candidates.append(descriptor)

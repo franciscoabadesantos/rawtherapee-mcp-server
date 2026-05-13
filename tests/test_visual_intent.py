@@ -9,6 +9,7 @@ from rawtherapee_mcp.visual_intent import (
     build_vision_candidate_specs,
     list_visual_editing_moves,
     resolve_visual_moves,
+    visual_moves_to_parameter_plan,
     visual_moves_to_parameters,
 )
 
@@ -82,18 +83,22 @@ class TestVisualEditingMoves:
         assert "gentle_tonal_separation" in moves
 
     def test_avoid_yellow_blue_split_blocks_controlled_blue_presence_by_default(self):
-        params = visual_moves_to_parameters(
+        plan = visual_moves_to_parameter_plan(
             ["clean_sky"],
             intent_profile={
                 "visual_anchor": "sunlight over rural fields",
                 "avoid": ["yellow/blue split", "fake grade"],
             },
         )
+        params = plan["parameters"]
         hsv = params.get("hsv_equalizer", {})
+        assert "clean_sky" in plan["visual_moves_blocked"]
+        assert "controlled_blue_presence" in plan["techniques_blocked"]
+        assert "cyan_shift" in plan["blocked_risk_tags"]
         assert "v_curve" not in hsv
 
     def test_avoid_yellow_blue_split_allows_controlled_blue_only_for_explicit_water_anchor(self):
-        params = visual_moves_to_parameters(
+        plan = visual_moves_to_parameter_plan(
             ["enhance_water_depth"],
             intent_profile={
                 "visual_anchor": "ocean water mass and bay horizon",
@@ -101,9 +106,24 @@ class TestVisualEditingMoves:
                 "avoid": ["yellow/blue split", "fake grade"],
             },
         )
+        params = plan["parameters"]
         hsv = params.get("hsv_equalizer", {})
+        assert "enhance_water_depth" in plan["visual_moves_used"]
+        assert "controlled_blue_presence" in plan["techniques_used"]
         assert hsv.get("enabled") is True
         assert "v_curve" in hsv
+
+    def test_parameter_plan_includes_technique_debug_fields(self):
+        plan = visual_moves_to_parameter_plan(
+            ["shape_light_break", "soften_mist", "gentle_tonal_separation"],
+            intensity="medium",
+        )
+        assert plan["moves_requested"] == ["shape_light_break", "soften_mist", "gentle_tonal_separation"]
+        assert plan["visual_moves_used"]
+        assert plan["techniques_used"]
+        assert isinstance(plan["overwritten_parameters"], list)
+        assert isinstance(plan["unknown_techniques"], list)
+        assert "parameters" in plan
 
     def test_supporting_water_alone_does_not_trigger_water_enhancement(self):
         moves = resolve_visual_moves(

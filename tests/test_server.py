@@ -20,11 +20,13 @@ from rawtherapee_mcp.server import (
     batch_preview,
     check_rt_status,
     compare_profiles,
+    create_composition_plan,
     create_curation_plan,
     create_editing_vision,
     create_editorial_brief,
     critique_gate,
     export_multi_device,
+    generate_crop_candidates,
     generate_editorial_candidates,
     generate_vision_candidates,
     get_config,
@@ -178,6 +180,26 @@ class TestEditorialWorkflowTools:
         assert "editing_vision_schema" in result
         assert "generate_vision_candidates" in result["next_recommended_tools"]
 
+    async def test_create_composition_plan_returns_contract(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        result = await create_composition_plan(
+            mock_ctx,
+            str(raw_file),
+            editing_vision={
+                "emotional_goal": "warm city transit energy",
+                "visual_anchor": "tram nose with rails and wires",
+                "viewer_notice_first": "tram front and leading rails",
+                "editing_moves": ["emphasize_subject", "enhance_geometry", "improve_composition"],
+            },
+            aspect_ratio="4:5",
+        )
+        assert "error" not in result
+        assert result["requested_aspect_ratio"] == "4:5"
+        assert len(result["crop_candidates"]) == 3
+        assert "generate_crop_candidates" in result["next_recommended_tools"]
+
     async def test_list_visual_editing_moves_returns_palette(self, mock_ctx):
         result = await list_visual_editing_moves(mock_ctx)
 
@@ -189,6 +211,8 @@ class TestEditorialWorkflowTools:
         tools = await mcp.list_tools()
         names = {tool.name for tool in tools}
         assert "visual_moves_to_parameters" in names
+        assert "create_composition_plan" in names
+        assert "generate_crop_candidates" in names
 
     async def test_visual_moves_to_parameters_tool_returns_sanitized_payload(self, mock_ctx):
         result = await visual_moves_to_parameters(
@@ -312,6 +336,41 @@ class TestEditorialWorkflowTools:
             assert profile.get("SharpenMicro", "Uniformity", "") == ""
             assert profile.get("Local Contrast", "Amount", "") == ""
             assert "local_contrast" not in candidate["merged_parameter_summary"]["groups"]
+
+    async def test_generate_crop_candidates_returns_safe_crop_only_profiles(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+
+        with patch("rawtherapee_mcp.server.get_effective_dimensions", return_value=(6000, 4000)):
+            result = await generate_crop_candidates(
+                mock_ctx,
+                str(raw_file),
+                "vision_frame",
+                editing_vision={
+                    "emotional_goal": "warm city transit energy",
+                    "visual_anchor": "tram nose with rails and wires",
+                    "viewer_notice_first": "tram front and leading rails",
+                    "preserve": ["travel postcard feeling"],
+                    "editing_moves": ["emphasize_subject", "enhance_geometry", "improve_composition"],
+                },
+            )
+        assert "error" not in result
+        assert len(result["candidates"]) == 3
+
+        from rawtherapee_mcp.pp3_parser import PP3Profile
+
+        for candidate in result["candidates"]:
+            assert candidate["preview_required"] is True
+            assert candidate["export_allowed_without_preview"] is False
+            assert Path(candidate["profile_path"]).is_file()
+
+            profile = PP3Profile()
+            profile.load(Path(candidate["profile_path"]))
+            assert profile.get("Crop", "Enabled") == "true"
+            assert profile.get("Resize", "Enabled") == "false"
+            assert profile.get("Local Contrast", "Amount", "") == ""
+            assert profile.get("ColorToning", "Method", "") == ""
+            assert profile.get("SharpenMicro", "Uniformity", "") == ""
 
     async def test_generate_vision_candidates_rural_vision_avoids_blue_split_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

@@ -80,6 +80,8 @@ from rawtherapee_mcp.profile_hierarchy import list_variants as _list_variants
 from rawtherapee_mcp.profile_hierarchy import propagate_to_variants as _propagate_to_variants
 from rawtherapee_mcp.rt_cli import get_rt_version, run_rt_cli
 from rawtherapee_mcp.visual_intent import (
+    build_composition_plan,
+    build_crop_candidate_specs,
     build_editing_vision_contract,
     build_vision_candidate_specs,
     resolve_visual_moves,
@@ -294,6 +296,83 @@ def _summarize_parameter_groups(parameters: dict[str, Any]) -> dict[str, Any]:
         groups.append(group_name)
         group_keys[group_name] = sorted(str(key) for key in value)
     return {"groups": groups, "group_keys": group_keys}
+
+
+_CROP_RATIO_MAP: dict[str, tuple[int, int] | None] = {
+    "original": None,
+    "4:5": (4, 5),
+    "3:2": (3, 2),
+    "1:1": (1, 1),
+    "16:9": (16, 9),
+}
+
+
+def _load_profile_or_template(
+    profile_name_or_path: str,
+    *,
+    templates_dir: Path,
+    custom_templates_dir: Path,
+) -> tuple[PP3Profile, str]:
+    """Load a PP3 either from disk or by template name."""
+    path = Path(profile_name_or_path)
+    if path.is_file():
+        profile = PP3Profile()
+        profile.load(path)
+        return profile, str(path)
+    profile = _load_template(profile_name_or_path, templates_dir, custom_templates_dir)
+    return profile, profile_name_or_path
+
+
+def _set_center_crop(
+    profile: PP3Profile,
+    *,
+    source_width: int,
+    source_height: int,
+    aspect_ratio: str,
+    scale: float,
+) -> dict[str, Any]:
+    """Apply a centered crop with optional aspect-ratio change."""
+    ratio_pair = _CROP_RATIO_MAP.get(aspect_ratio)
+    if ratio_pair is None:
+        crop_w = max(1, int(round(source_width * scale)))
+        crop_h = max(1, int(round(source_height * scale)))
+        ratio_value = f"{source_width}:{source_height}"
+    else:
+        target_w, target_h = ratio_pair
+        target_ratio = target_w / target_h
+        source_ratio = source_width / source_height
+        if source_ratio > target_ratio:
+            base_h = source_height
+            base_w = int(round(base_h * target_ratio))
+        else:
+            base_w = source_width
+            base_h = int(round(base_w / target_ratio))
+        crop_w = max(1, int(round(base_w * scale)))
+        crop_h = max(1, int(round(base_h * scale)))
+        ratio_value = f"{target_w}:{target_h}"
+
+    crop_x = max(0, (source_width - crop_w) // 2)
+    crop_y = max(0, (source_height - crop_h) // 2)
+
+    profile.set("Crop", "Enabled", "true")
+    profile.set("Crop", "X", str(crop_x))
+    profile.set("Crop", "Y", str(crop_y))
+    profile.set("Crop", "W", str(crop_w))
+    profile.set("Crop", "H", str(crop_h))
+    profile.set("Crop", "FixedRatio", "true")
+    profile.set("Crop", "Ratio", ratio_value)
+    profile.set("Crop", "Orientation", "As Image")
+    profile.set("Crop", "Guide", "Frame")
+    profile.set("Resize", "Enabled", "false")
+
+    return {
+        "x": crop_x,
+        "y": crop_y,
+        "w": crop_w,
+        "h": crop_h,
+        "ratio": ratio_value,
+        "scale": scale,
+    }
 
 
 async def _maybe_attach_thumbnail(
@@ -564,6 +643,125 @@ async def create_editing_vision(
         user_intent=user_intent,
         context_hint=context_hint,
     )
+
+
+@mcp.tool()
+async def create_composition_plan(
+    ctx: Context,
+    file_path: str,
+    editing_vision: dict[str, Any],
+    aspect_ratio: str = "original",
+) -> dict[str, Any]:
+    """Build a structured composition/crop planning contract before crop testing.
+
+    This tool does not perform computer vision. It translates the editing
+    vision into composition questions and crop priorities that should be
+    checked visually in previews.
+    Params: file_path, editing_vision, aspect_ratio
+    """
+    _ = get_config(ctx)
+    try:
+        raw_path = ensure_existing_file(file_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    validation_error = validate_filled_editing_vision(editing_vision)
+    if validation_error:
+        return {"error": validation_error}
+
+    return build_composition_plan(
+        str(raw_path),
+        editing_vision,
+        aspect_ratio=aspect_ratio,
+    )
+
+
+@mcp.tool()
+async def generate_crop_candidates(
+    ctx: Context,
+    file_path: str,
+    base_name: str,
+    editing_vision: dict[str, Any],
+    base_profile: str | None = None,
+) -> dict[str, Any]:
+    """Generate safe crop-only PP3 variants for preview and hierarchy testing.
+
+    Creates conservative crop profile variants from an existing candidate or
+    neutral baseline. This tool never exports and should be followed by
+    preview_raw/critique_gate before any decision.
+    Params: file_path, base_name, editing_vision, base_profile
+    """
+    config = get_config(ctx)
+    templates_dir = _get_templates_dir()
+
+    try:
+        raw_path = ensure_existing_file(file_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    validation_error = validate_filled_editing_vision(editing_vision)
+    if validation_error:
+        return {"error": validation_error}
+
+    source_width, source_height = get_effective_dimensions(raw_path)
+    if source_width <= 0 or source_height <= 0:
+        return {"error": f"Could not determine effective dimensions for {file_path}"}
+
+    base_profile_name = base_profile or "neutral"
+    try:
+        base, resolved_base_profile = _load_profile_or_template(
+            base_profile_name,
+            templates_dir=templates_dir,
+            custom_templates_dir=config.custom_templates_dir,
+        )
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    candidates: list[dict[str, Any]] = []
+    for spec in build_crop_candidate_specs(editing_vision):
+        candidate_name = str(spec["candidate_name"])
+        candidate_slug = safe_slug(f"{base_name}_{candidate_name}")
+        profile = base.copy()
+        aspect_ratio = str(spec["aspect_ratio"])
+        scale = 0.92 if candidate_name == "original_aspect_tighten" else 0.96
+        if candidate_name == "4x5_travel_vertical":
+            scale = 0.94
+
+        crop_window = _set_center_crop(
+            profile,
+            source_width=source_width,
+            source_height=source_height,
+            aspect_ratio=aspect_ratio,
+            scale=scale,
+        )
+        output_path = config.custom_templates_dir / f"{candidate_slug}.pp3"
+        profile.save(output_path)
+
+        candidates.append(
+            {
+                **spec,
+                "profile_path": str(output_path),
+                "base_profile": resolved_base_profile,
+                "crop_window": crop_window,
+                "composition_improvement_needed": True,
+                "crop_or_geometry_suggested": True,
+                "preview_required": True,
+                "export_allowed_without_preview": False,
+            }
+        )
+
+    return {
+        "file_path": str(raw_path),
+        "base_name": base_name,
+        "base_profile": resolved_base_profile,
+        "editing_vision": editing_vision,
+        "source_dimensions": {"width": source_width, "height": source_height},
+        "candidates": candidates,
+        "workflow_reminder": (
+            "Preview each crop candidate before choosing. Crop alone is not an export decision; "
+            "run critique_gate after preview and only continue if hierarchy clearly improves."
+        ),
+    }
 
 
 @mcp.tool()

@@ -12,6 +12,7 @@ _VALID_INTENSITIES = ("low", "medium", "high")
 _INTENSITY_SCALE = {"low": 0.7, "medium": 1.0, "high": 1.25}
 _MOVE_NAMES = (
     "emphasize_subject",
+    "improve_composition",
     "preserve_silhouette",
     "shape_light_break",
     "deepen_cloud_weight",
@@ -113,6 +114,7 @@ _STREET_TRAVEL_GEOMETRY_TERMS = (
     "composition",
     "postcard",
 )
+_SUPPORTED_ASPECT_RATIOS = ("original", "4:5", "3:2", "1:1", "16:9")
 
 
 def _string_list(value: object) -> list[str]:
@@ -188,6 +190,7 @@ def _is_street_travel_geometry_vision(editing_vision: dict[str, Any] | None) -> 
 
 _MOVE_TO_TECHNIQUES: dict[str, list[str]] = {
     "emphasize_subject": ["subject_readability_without_hdr", "gentle_tonal_separation"],
+    "improve_composition": [],
     "preserve_silhouette": ["preserve_silhouette_tone", "soft_highlight_rolloff"],
     "shape_light_break": ["soft_highlight_rolloff", "shape_light_break_tonality", "subtle_shadow_depth"],
     "deepen_cloud_weight": ["gentle_tonal_separation", "subtle_shadow_depth", "soft_highlight_rolloff"],
@@ -289,6 +292,16 @@ _VISUAL_MOVE_REGISTRY: dict[str, dict[str, str]] = {
         "risk": "Can over-flatten mood if exposure lift is pushed too far.",
         "safe_pp3_strategy_summary": (
             "Small exposure lift plus restrained luminance contrast with color-shift protection."
+        ),
+    },
+    "improve_composition": {
+        "purpose": "Use crop and framing review to strengthen hierarchy before escalating global styling.",
+        "when_to_use": "Subject, geometry, or place context is present but thumbnail impact and hierarchy feel weak.",
+        "when_to_avoid": "The full-frame context is the point and tighter framing would remove the story.",
+        "risk": "Can damage balance through over-cropping or a forced aspect ratio.",
+        "safe_pp3_strategy_summary": (
+            "Plan 2-3 crop variants, preview them, and keep geometry/anchor "
+            "edges intentional."
         ),
     },
     "preserve_silhouette": {
@@ -450,6 +463,7 @@ def build_editing_vision_contract(
             "What would ruin this image if I edited too hard?",
             "What kind of edit would feel generic or fake here?",
             "Which safe visual moves best serve this image?",
+            "Can crop or framing improve hierarchy more than global tone/color?",
         ],
         "editing_vision_schema": {
             "emotional_goal": "Short phrase describing what the final image should feel like.",
@@ -515,8 +529,10 @@ def build_editing_vision_contract(
         },
         "next_recommended_tools": [
             "list_visual_editing_moves",
+            "create_composition_plan",
             "create_editorial_brief",
             "generate_vision_candidates",
+            "generate_crop_candidates",
             "critique_gate",
         ],
     }
@@ -532,6 +548,148 @@ def list_visual_editing_moves() -> dict[str, Any]:
             "Choose the moves that serve the image's purpose."
         ),
         "safety_notes": list(_SAFE_MOVE_NOTES),
+    }
+
+
+def _normalize_aspect_ratio(aspect_ratio: str | None) -> str:
+    """Return a supported aspect ratio label for composition planning."""
+    normalized = (aspect_ratio or "original").strip().lower()
+    return normalized if normalized in _SUPPORTED_ASPECT_RATIOS else "original"
+
+
+def build_crop_candidate_specs(
+    editing_vision: dict[str, Any] | None,
+    *,
+    aspect_ratio: str = "original",
+) -> list[dict[str, str]]:
+    """Return conservative crop-variant planning descriptors.
+
+    This is composition planning only. It does not inspect pixels.
+    """
+    requested_ratio = _normalize_aspect_ratio(aspect_ratio)
+    geometry_led = _is_street_travel_geometry_vision(editing_vision)
+    combined_text = _vision_combined_text(editing_vision)
+
+    candidates = [
+        {
+            "candidate_name": "original_aspect_tighten",
+            "aspect_ratio": "original",
+            "intent": "Tighten weak empty space while preserving the photograph's native feel.",
+            "crop_strategy": "Reduce dead foreground and edge drift first while keeping the original aspect.",
+            "likely_benefit": "Improves hierarchy without introducing a more stylized framing change.",
+            "risk": "May still feel too polite if the original aspect ratio is part of the hierarchy problem.",
+        },
+        {
+            "candidate_name": "4x5_travel_vertical",
+            "aspect_ratio": "4:5",
+            "intent": "Make the subject/place hierarchy read faster in a travel-friendly vertical frame.",
+            "crop_strategy": "Trim weak foreground first and keep the anchor large enough to pop at thumbnail size.",
+            "likely_benefit": "Often improves mobile/postcard readability for street and travel frames.",
+            "risk": "Can cut too much breathing room or sky if pushed mechanically.",
+        },
+        {
+            "candidate_name": "3x2_clean_geometry",
+            "aspect_ratio": "3:2",
+            "intent": "Preserve line flow and structural rhythm in a classic geometry-friendly frame.",
+            "crop_strategy": "Keep line entry and exit points clean so rails, roads, or facades still guide the eye.",
+            "likely_benefit": "Can balance subject scale and urban geometry better than a tighter vertical crop.",
+            "risk": "If the source already lives near this family, the visible change may be small.",
+        },
+    ]
+
+    if geometry_led and "wire" in combined_text:
+        candidates[2]["crop_strategy"] = (
+            "Keep rail and wire entry points clean; avoid trimming the strongest intersections at the frame edges."
+        )
+
+    if requested_ratio != "original":
+        candidates.sort(key=lambda item: (item["aspect_ratio"] != requested_ratio, item["candidate_name"]))
+
+    return candidates
+
+
+def build_composition_plan(
+    file_path: str,
+    editing_vision: dict[str, Any] | None,
+    *,
+    aspect_ratio: str = "original",
+) -> dict[str, Any]:
+    """Return a crop/framing planning contract from editing-vision language.
+
+    This helper intentionally does not perform computer vision. It translates
+    the editing vision into a stricter composition review so the LLM previews
+    crop variants before concluding that global edits are not enough.
+    """
+    normalized_ratio = _normalize_aspect_ratio(aspect_ratio)
+    combined_text = _vision_combined_text(editing_vision)
+    geometry_led = _is_street_travel_geometry_vision(editing_vision)
+    visual_anchor = str((editing_vision or {}).get("visual_anchor", "")).strip()
+    viewer_notice_first = str((editing_vision or {}).get("viewer_notice_first", "")).strip()
+    deemphasize = _string_list((editing_vision or {}).get("deemphasize"))
+
+    leading_lines: list[str] = []
+    preserve_edges: list[str] = []
+    distractions_to_crop = list(deemphasize)
+
+    if any(term in combined_text for term in ("tram", "rail", "rails")):
+        leading_lines.append("rail corridor and track convergence")
+        preserve_edges.append("Keep the tram nose and at least one clean rail entry readable.")
+    if any(term in combined_text for term in ("wire", "wires", "catenary", "pole", "poles")):
+        leading_lines.append("overhead wire geometry and repeating support poles")
+        preserve_edges.append("Avoid trimming the strongest wire intersections at the top edge.")
+    if any(term in combined_text for term in ("street", "road", "urban", "city", "architecture", "geometry")):
+        leading_lines.append("street depth and repeating urban structure")
+        preserve_edges.append("Protect the cleanest structural corridor at the frame edge.")
+
+    if geometry_led and not distractions_to_crop:
+        distractions_to_crop = [
+            "dead foreground or empty lower frame that delays the subject read",
+            "edge clutter that competes before the anchor and leading lines take over",
+            "non-essential sky if it weakens the graphic corridor",
+        ]
+
+    if not leading_lines:
+        leading_lines.append("the strongest directional shapes that point toward the visual anchor")
+    if not preserve_edges:
+        preserve_edges.append("Preserve the clearest anchor edge and strongest route into the frame.")
+
+    rotate_or_straighten_suggestion = (
+        "Check whether vertical supports or horizon-adjacent structures lean; only apply a slight straighten if it "
+        "makes the geometry feel more intentional without harming edge balance."
+    )
+    if not geometry_led:
+        rotate_or_straighten_suggestion = (
+            "Straighten only if a visible lean distracts from the anchor; "
+            "avoid rotation that creates awkward edge loss."
+        )
+
+    return {
+        "file_path": file_path,
+        "editing_vision": editing_vision,
+        "requested_aspect_ratio": normalized_ratio,
+        "composition_anchor": visual_anchor or "the primary subject/place anchor",
+        "leading_lines": leading_lines,
+        "distractions_to_crop": distractions_to_crop,
+        "preserve_edges": preserve_edges,
+        "crop_candidates": build_crop_candidate_specs(editing_vision, aspect_ratio=normalized_ratio),
+        "rotate_or_straighten_suggestion": rotate_or_straighten_suggestion,
+        "thumbnail_goal": (
+            viewer_notice_first
+            or visual_anchor
+            or "Make the main anchor read clearly before secondary context."
+        ),
+        "risk_notes": [
+            "Do not crop away the reason the image exists just to force impact.",
+            "Avoid clipping the strongest line entry/exit points at the edges.",
+            "Treat crop as a preview decision first; do not export from crop alone.",
+        ],
+        "required_visual_questions": [
+            "Can crop or framing improve hierarchy more than global tone/color?",
+            "Which edges must stay intact so the anchor still feels intentional?",
+            "What dead space can be reduced without making the frame feel cramped?",
+            "Would a 4:5 or 3:2 variant improve thumbnail impact more than subtle global styling?",
+        ],
+        "next_recommended_tools": ["generate_crop_candidates", "preview_raw", "critique_gate"],
     }
 
 
@@ -572,10 +730,12 @@ def _infer_moves_from_vision(editing_vision: dict[str, Any] | None) -> list[str]
         moves.append("preserve_event_authenticity")
     if any(token in combined_text for token in ("geometry", "building", "architecture")):
         moves.append("enhance_geometry")
+        moves.append("improve_composition")
     if any(token in combined_text for token in ("tram", "street", "urban", "city", "architecture", "geometry")):
         moves.append("emphasize_subject")
     if any(token in combined_text for token in ("travel", "street", "urban", "city", "tram", "postcard")):
         moves.append("enhance_geometry")
+        moves.append("improve_composition")
         moves.append("reduce_distractions")
     if any(
         token in combined_text
@@ -850,7 +1010,17 @@ def build_vision_candidate_specs(
             "thumbnail_impact_score": "0-10 after preview",
             "composition_improvement_needed": "yes|no after preview",
             "crop_or_geometry_suggested": geometry_or_crop_suggested,
-            "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
+            "suggested_next_tools": (
+                [
+                    "create_composition_plan",
+                    "generate_crop_candidates",
+                    "preview_raw",
+                    "critique_gate",
+                    "adjust_profile",
+                ]
+                if geometry_or_crop_suggested
+                else ["preview_raw", "critique_gate", "adjust_profile"]
+            ),
         },
         {
             "candidate_name": "expressive_refinement",
@@ -869,7 +1039,17 @@ def build_vision_candidate_specs(
             "thumbnail_impact_score": "0-10 after preview",
             "composition_improvement_needed": "yes|no after preview",
             "crop_or_geometry_suggested": geometry_or_crop_suggested,
-            "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
+            "suggested_next_tools": (
+                [
+                    "create_composition_plan",
+                    "generate_crop_candidates",
+                    "preview_raw",
+                    "critique_gate",
+                    "adjust_profile",
+                ]
+                if geometry_or_crop_suggested
+                else ["preview_raw", "critique_gate", "adjust_profile"]
+            ),
         },
         {
             "candidate_name": "restrained_experiment",
@@ -888,6 +1068,16 @@ def build_vision_candidate_specs(
             "thumbnail_impact_score": "0-10 after preview",
             "composition_improvement_needed": "yes|no after preview",
             "crop_or_geometry_suggested": geometry_or_crop_suggested,
-            "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
+            "suggested_next_tools": (
+                [
+                    "create_composition_plan",
+                    "generate_crop_candidates",
+                    "preview_raw",
+                    "critique_gate",
+                    "adjust_profile",
+                ]
+                if geometry_or_crop_suggested
+                else ["preview_raw", "critique_gate", "adjust_profile"]
+            ),
         },
     ]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from rawtherapee_mcp.visual_intent import (
+    build_composition_plan,
     build_editing_vision_contract,
     build_vision_candidate_specs,
     list_visual_editing_moves,
@@ -42,6 +43,10 @@ class TestBuildEditingVisionContract:
         assert expected_keys.issubset(set(contract.keys()))
         assert "emotional_goal" in contract["editing_vision_schema"]
         assert "generate_vision_candidates" in contract["next_recommended_tools"]
+        assert "create_composition_plan" in contract["next_recommended_tools"]
+        assert "Can crop or framing improve hierarchy more than global tone/color?" in contract[
+            "required_visual_questions"
+        ]
 
 
 class TestVisualEditingMoves:
@@ -149,8 +154,29 @@ class TestVisualEditingMoves:
         )
         assert "emphasize_subject" in moves
         assert "enhance_geometry" in moves
+        assert "improve_composition" in moves
         assert "reduce_distractions" in moves
         assert "gentle_tonal_separation" in moves
+
+    def test_build_composition_plan_returns_crop_contract_for_geometry_vision(self):
+        plan = build_composition_plan(
+            "photo.cr3",
+            {
+                "emotional_goal": "warm Mediterranean city transit energy",
+                "visual_anchor": "tram nose with rails and wires",
+                "viewer_notice_first": "the tram front and leading rails",
+                "deemphasize": ["dead foreground"],
+                "editing_moves": ["emphasize_subject", "enhance_geometry", "improve_composition"],
+            },
+            aspect_ratio="4:5",
+        )
+
+        assert plan["requested_aspect_ratio"] == "4:5"
+        assert "crop_candidates" in plan
+        assert len(plan["crop_candidates"]) == 3
+        assert any("rail corridor" in line for line in plan["leading_lines"])
+        assert any(candidate["candidate_name"] == "4x5_travel_vertical" for candidate in plan["crop_candidates"])
+        assert "generate_crop_candidates" in plan["next_recommended_tools"]
 
 
 class TestVisionCandidateSpecs:
@@ -234,3 +260,5 @@ class TestVisionCandidateSpecs:
             assert "thumbnail_impact_score" in spec
             assert "composition_improvement_needed" in spec
             assert spec["crop_or_geometry_suggested"] is True
+            assert "create_composition_plan" in spec["suggested_next_tools"]
+            assert "generate_crop_candidates" in spec["suggested_next_tools"]

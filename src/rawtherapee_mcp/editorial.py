@@ -202,6 +202,11 @@ _PLACE_EVENT_CATEGORIES = {
     "street_moment",
     "beach_summer",
 }
+_COMPOSITION_FORWARD_CATEGORIES = {
+    "travel_place_vibe",
+    "architecture_geometry",
+    "street_moment",
+}
 
 
 def safe_slug(value: str, fallback: str = "profile") -> str:
@@ -651,9 +656,10 @@ def build_editorial_brief(
             "Generate at least 3 distinct candidates before selecting a direction.",
             "Preview each candidate and compare against original at thumbnail size.",
             "Run critique_gate after every preview and follow its verdict strictly.",
-            "Refine the biggest flaw first, then re-preview before any export decision.",
-            "If inferred intent changes after preview, revise the brief and critique standard.",
-        ],
+        "Refine the biggest flaw first, then re-preview before any export decision.",
+        "If inferred intent changes after preview, revise the brief and critique standard.",
+        "If hierarchy is weak and crop/framing may help more than tone/color, plan crop before giving up.",
+    ],
         "visual_critique_checklist": visual_checklist,
         "rejection_criteria": rejection_criteria,
         "proof_only_criteria": [
@@ -706,6 +712,29 @@ def build_editorial_brief(
             "Deemphasize distractions rather than globally brightening or sharpening everything.",
             "Reject edits that feel like generic presets instead of serving the image's vision.",
         ]
+        vision_text = " ".join(
+            [
+                str(editing_vision.get("visual_anchor", "")),
+                str(editing_vision.get("emotional_goal", "")),
+                " ".join(_string_list(editing_vision.get("editing_moves"))),
+                " ".join(_string_list(editing_vision.get("preserve"))),
+            ]
+        ).lower()
+        if any(term in vision_text for term in ("travel", "street", "tram", "rail", "wire", "geometry", "urban")):
+            brief["required_preview_loop_steps"].insert(
+                3,
+                (
+                    "If subject/geometry hierarchy is weak, run create_composition_plan "
+                    "and preview crop candidates before proof_only."
+                ),
+            )
+            brief["llm_instructions"].insert(
+                5,
+                (
+                    "For travel/street/geometry frames, explicitly decide whether crop "
+                    "or framing can improve hierarchy more than global tone/color."
+                ),
+            )
 
     return brief
 
@@ -873,6 +902,21 @@ def build_critique_gate(
     dark_subject_policy = str(intent_standard.get("dark_subject_policy", ""))
     avoid_text = " ".join(_string_list((editing_vision or {}).get("avoid"))).lower()
 
+    composition_forward = bool(
+        editing_vision
+        and any(
+            term in " ".join(
+                [
+                    str(editing_vision.get("emotional_goal", "")),
+                    str(editing_vision.get("visual_anchor", "")),
+                    " ".join(_string_list(editing_vision.get("editing_moves"))),
+                    " ".join(_string_list(editing_vision.get("preserve"))),
+                ]
+            ).lower()
+            for term in ("travel", "street", "tram", "rail", "wire", "geometry", "urban")
+        )
+    ) or str(intent_standard.get("primary_intent_category", "")) in _COMPOSITION_FORWARD_CATEGORIES
+
     scoring_rubric = {
         "subject_separation_score": "0-10",
         "face_or_subject_exposure_score": "0-10",
@@ -906,7 +950,7 @@ def build_critique_gate(
         "artifact_penalty": "0-10",
         "wrong_standard_warning": "true|false with one-sentence reason",
         "overprocessing_penalty": "0-10",
-        "post_worthy_verdict": "export | refine | proof_only | reject",
+        "post_worthy_verdict": "export | refine | crop | proof_only | reject",
         "next_action": "One-sentence concrete next step",
     }
 
@@ -938,6 +982,10 @@ def build_critique_gate(
         "If tonal separation is weak, refine using curves or color-balance tools before export.",
         "If crop makes composition worse, revert crop or try another crop.",
         "If composition_improvement_needed is true and unresolved, do not export.",
+        (
+            "If visible_difference_score, visual_hierarchy_improvement_score, and thumbnail_impact_score are low "
+            "while crop_or_geometry_suggested is true, verdict should be crop or refine, not proof_only yet."
+        ),
         "If colors look fake, reduce saturation/warmth and refine.",
         "If image cannot become post-worthy with RawTherapee-only edits, mark proof_only or reject.",
         (
@@ -986,12 +1034,29 @@ def build_critique_gate(
                     "If the vision promises travel/street energy or geometry and the result is "
                     "barely visible, verdict cannot be export."
                 ),
+                (
+                    "Answer explicitly whether crop or framing can improve hierarchy more than global tone/color "
+                    "before concluding proof_only."
+                ),
             ]
         )
         if vision_inferred_category and intent_standard.get("primary_intent_category") != vision_inferred_category:
             next_action_rules.append(
                 "If critique standard conflicts with editing vision, set wrong_standard_warning=true and re-critique."
             )
+    if composition_forward:
+        next_action_rules.extend(
+            [
+                (
+                    "For composition-led scenes, test crop or geometry cleanup before "
+                    "giving up on a weak global-only result."
+                ),
+                (
+                    "If crop_or_geometry_suggested is true and no crop variants were "
+                    "previewed, verdict should stay refine/crop."
+                ),
+            ]
+        )
 
     return {
         "preview_path": preview_path,
@@ -1024,6 +1089,7 @@ def build_critique_gate(
             "Did the edit strengthen the visual anchor?",
             "Did the edit improve visual hierarchy enough that the anchor reads faster than the distractions?",
             "Is crop, rotation, or geometry cleanup needed before export?",
+            "Can crop or framing improve hierarchy more than global tone/color?",
             "Did it preserve the emotional goal instead of replacing it with a generic preset look?",
             "What distractions were reduced or left competing?",
             "Did it destroy anything the image needed to preserve?",

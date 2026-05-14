@@ -93,6 +93,26 @@ class TestBuildEditorialBrief:
         assert "fake orange/blue grade" in brief["what_to_avoid"]
         assert any("editing-vision anchor" in item for item in brief["export_criteria"])
 
+    def test_travel_geometry_brief_requires_crop_planning_before_giving_up(self):
+        brief = build_editorial_brief(
+            "photo.cr2",
+            intent=None,
+            style="clean_editorial",
+            output_goal="post_worthy",
+            editing_vision={
+                "emotional_goal": "warm city transit energy",
+                "visual_anchor": "tram nose with rails and wires",
+                "editing_moves": ["emphasize_subject", "enhance_geometry", "improve_composition"],
+                "preserve": ["travel postcard feeling"],
+            },
+        )
+
+        assert any("create_composition_plan" in step for step in brief["required_preview_loop_steps"])
+        assert any(
+            "crop or framing can improve hierarchy more than global tone/color" in instruction
+            for instruction in brief["llm_instructions"]
+        )
+
 
 class TestEditorialCandidateParameters:
     """Tests for candidate parameter generation."""
@@ -163,6 +183,7 @@ class TestBuildCritiqueGate:
         assert threshold["overprocessing_penalty_max"] == 3
         assert any("only changes exposure/warmth/saturation" in rule for rule in gate["next_action_rules"])
         assert any("too close to the original" in rule for rule in gate["next_action_rules"])
+        assert "crop" in rubric["post_worthy_verdict"]
 
     def test_includes_vision_alignment_rules_when_editing_vision_is_present(self):
         gate = build_critique_gate(
@@ -272,6 +293,14 @@ class TestBuildCritiqueGate:
             for item in gate["next_action_rules"]
         )
         assert any("proof_only/refine" in answer for answer in gate["required_llm_answers"])
+        assert any(
+            "crop or framing improve hierarchy more than global tone/color" in answer.lower()
+            for answer in gate["required_llm_answers"]
+        )
+        assert any(
+            "verdict should be crop or refine, not proof_only yet" in item
+            for item in gate["next_action_rules"]
+        )
 
 
 class TestBuildIntentInferenceContract:

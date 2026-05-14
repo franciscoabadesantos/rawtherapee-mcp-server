@@ -71,6 +71,7 @@ from rawtherapee_mcp.pp3_generator import (
     _load_template,
     apply_device_crop,
     apply_parameters,
+    create_neutral_profile,
     sanitize_autonomous_parameters,
 )
 from rawtherapee_mcp.pp3_generator import generate_profile as _generate_profile
@@ -372,6 +373,174 @@ def _set_center_crop(
         "h": crop_h,
         "ratio": ratio_value,
         "scale": scale,
+    }
+
+
+def _extract_dimensions_from_image_info(info: dict[str, Any]) -> tuple[int, int]:
+    """Return positive width/height from an image-info dict, or ``(0, 0)``."""
+    try:
+        width = int(info.get("width", 0))
+        height = int(info.get("height", 0))
+    except (TypeError, ValueError):
+        return (0, 0)
+    if width <= 0 or height <= 0:
+        return (0, 0)
+    return (width, height)
+
+
+async def _resolve_crop_candidate_dimensions(config: RTConfig, raw_path: Path) -> dict[str, Any]:
+    """Resolve source dimensions for crop PP3 coordinates with explicit fallbacks."""
+    attempts: list[dict[str, Any]] = []
+
+    try:
+        image_info = await asyncio.to_thread(_get_image_info, raw_path)
+        width, height = _extract_dimensions_from_image_info(image_info)
+        attempt = {
+            "source": "direct_image_metadata",
+            "source_file_used": str(raw_path),
+            "success": width > 0 and height > 0,
+            "width": width,
+            "height": height,
+        }
+        if "error" in image_info:
+            attempt["error"] = image_info["error"]
+        attempts.append(attempt)
+        if width > 0 and height > 0:
+            return {
+                "success": True,
+                "dimension_source": "direct_image_metadata",
+                "source_width": width,
+                "source_height": height,
+                "source_file_used": str(raw_path),
+                "used_preview_fallback": False,
+                "dimension_sources_attempted": attempts,
+            }
+    except Exception as exc:  # noqa: BLE001
+        attempts.append(
+            {
+                "source": "direct_image_metadata",
+                "source_file_used": str(raw_path),
+                "success": False,
+                "error": str(exc),
+            }
+        )
+
+    try:
+        width, height = await asyncio.to_thread(get_effective_dimensions, raw_path)
+        attempts.append(
+            {
+                "source": "effective_exif_dimensions",
+                "source_file_used": str(raw_path),
+                "success": width > 0 and height > 0,
+                "width": width,
+                "height": height,
+                "error": "" if width > 0 and height > 0 else "No positive EXIF/TIFF dimensions found",
+            }
+        )
+        if width > 0 and height > 0:
+            return {
+                "success": True,
+                "dimension_source": "effective_exif_dimensions",
+                "source_width": width,
+                "source_height": height,
+                "source_file_used": str(raw_path),
+                "used_preview_fallback": False,
+                "dimension_sources_attempted": attempts,
+            }
+    except Exception as exc:  # noqa: BLE001
+        attempts.append(
+            {
+                "source": "effective_exif_dimensions",
+                "source_file_used": str(raw_path),
+                "success": False,
+                "error": str(exc),
+            }
+        )
+
+    if config.rt_cli_path is None:
+        attempts.append(
+            {
+                "source": "rawtherapee_neutral_preview_dimensions",
+                "source_file_used": None,
+                "success": False,
+                "error": "RawTherapee CLI is not configured; cannot generate a preview fallback",
+            }
+        )
+    else:
+        timestamp = int(time.time() * 1000)
+        probe_profile_path = config.preview_dir / f"_dimension_probe_{timestamp}.pp3"
+        preview_path = config.preview_dir / f"_dimension_probe_{raw_path.stem}_{timestamp}.jpg"
+        try:
+            probe_profile = create_neutral_profile()
+            probe_profile.set("Resize", "Enabled", "false")
+            probe_profile.set("Crop", "Enabled", "false")
+            probe_profile.save(probe_profile_path)
+
+            preview_result = await run_rt_cli(
+                rt_path=config.rt_cli_path,
+                input_path=raw_path,
+                output_path=preview_path,
+                profiles=[probe_profile_path],
+                output_format="jpeg",
+                jpeg_quality=85,
+            )
+            if preview_result.get("success"):
+                preview_info = await asyncio.to_thread(_get_image_info, preview_path)
+                width, height = _extract_dimensions_from_image_info(preview_info)
+                attempt = {
+                    "source": "rawtherapee_neutral_preview_dimensions",
+                    "source_file_used": str(preview_path),
+                    "success": width > 0 and height > 0,
+                    "width": width,
+                    "height": height,
+                }
+                if "error" in preview_info:
+                    attempt["error"] = preview_info["error"]
+                attempts.append(attempt)
+                if width > 0 and height > 0:
+                    return {
+                        "success": True,
+                        "dimension_source": "rawtherapee_neutral_preview_dimensions",
+                        "source_width": width,
+                        "source_height": height,
+                        "source_file_used": str(preview_path),
+                        "used_preview_fallback": True,
+                        "dimension_sources_attempted": attempts,
+                    }
+            else:
+                attempts.append(
+                    {
+                        "source": "rawtherapee_neutral_preview_dimensions",
+                        "source_file_used": str(preview_path),
+                        "success": False,
+                        "error": preview_result.get("error", "RawTherapee preview probe did not succeed"),
+                        "stderr": preview_result.get("stderr", ""),
+                        "stdout": preview_result.get("stdout", ""),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            attempts.append(
+                {
+                    "source": "rawtherapee_neutral_preview_dimensions",
+                    "source_file_used": str(preview_path),
+                    "success": False,
+                    "error": str(exc),
+                }
+            )
+        finally:
+            try:
+                probe_profile_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    return {
+        "success": False,
+        "dimension_source": None,
+        "source_width": 0,
+        "source_height": 0,
+        "source_file_used": None,
+        "used_preview_fallback": False,
+        "dimension_sources_attempted": attempts,
     }
 
 
@@ -703,9 +872,24 @@ async def generate_crop_candidates(
     if validation_error:
         return {"error": validation_error}
 
-    source_width, source_height = get_effective_dimensions(raw_path)
+    dimension_result = await _resolve_crop_candidate_dimensions(config, raw_path)
+    source_width = int(dimension_result["source_width"])
+    source_height = int(dimension_result["source_height"])
     if source_width <= 0 or source_height <= 0:
-        return {"error": f"Could not determine effective dimensions for {file_path}"}
+        return {
+            "error": f"Could not determine effective dimensions for {file_path}",
+            "dimension_source": dimension_result["dimension_source"],
+            "source_width": source_width,
+            "source_height": source_height,
+            "source_file_used": dimension_result["source_file_used"],
+            "used_preview_fallback": dimension_result["used_preview_fallback"],
+            "dimension_sources_attempted": dimension_result["dimension_sources_attempted"],
+            "suggestion": (
+                "Provide a RAW file with readable EXIF dimensions, configure RawTherapee CLI so a neutral "
+                "preview probe can be generated, or run preview_raw first and check that RawTherapee can decode "
+                "the file."
+            ),
+        }
 
     base_profile_name = base_profile or "neutral"
     try:
@@ -740,8 +924,20 @@ async def generate_crop_candidates(
         candidates.append(
             {
                 **spec,
+                "candidate_name": candidate_name,
                 "profile_path": str(output_path),
                 "base_profile": resolved_base_profile,
+                "aspect_ratio": aspect_ratio,
+                "crop_coordinates": {
+                    "x": crop_window["x"],
+                    "y": crop_window["y"],
+                    "width": crop_window["w"],
+                    "height": crop_window["h"],
+                },
+                "crop_width": crop_window["w"],
+                "crop_height": crop_window["h"],
+                "crop_x": crop_window["x"],
+                "crop_y": crop_window["y"],
                 "crop_window": crop_window,
                 "composition_improvement_needed": True,
                 "crop_or_geometry_suggested": True,
@@ -755,6 +951,12 @@ async def generate_crop_candidates(
         "base_name": base_name,
         "base_profile": resolved_base_profile,
         "editing_vision": editing_vision,
+        "dimension_source": dimension_result["dimension_source"],
+        "source_width": source_width,
+        "source_height": source_height,
+        "source_file_used": dimension_result["source_file_used"],
+        "used_preview_fallback": dimension_result["used_preview_fallback"],
+        "dimension_sources_attempted": dimension_result["dimension_sources_attempted"],
         "source_dimensions": {"width": source_width, "height": source_height},
         "candidates": candidates,
         "workflow_reminder": (

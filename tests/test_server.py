@@ -356,21 +356,149 @@ class TestEditorialWorkflowTools:
             )
         assert "error" not in result
         assert len(result["candidates"]) == 3
+        assert result["dimension_source"] == "effective_exif_dimensions"
+        assert result["source_width"] == 6000
+        assert result["source_height"] == 4000
+        assert result["source_file_used"] == str(raw_file)
+        assert result["used_preview_fallback"] is False
+        assert "dimension_sources_attempted" in result
 
         from rawtherapee_mcp.pp3_parser import PP3Profile
 
         for candidate in result["candidates"]:
+            assert candidate["candidate_name"] in {
+                "original_aspect_tighten",
+                "4x5_travel_vertical",
+                "3x2_clean_geometry",
+            }
             assert candidate["preview_required"] is True
             assert candidate["export_allowed_without_preview"] is False
             assert Path(candidate["profile_path"]).is_file()
+            assert candidate["crop_coordinates"] == {
+                "x": candidate["crop_x"],
+                "y": candidate["crop_y"],
+                "width": candidate["crop_width"],
+                "height": candidate["crop_height"],
+            }
 
             profile = PP3Profile()
             profile.load(Path(candidate["profile_path"]))
             assert profile.get("Crop", "Enabled") == "true"
             assert profile.get("Resize", "Enabled") == "false"
+            assert int(profile.get("Crop", "X")) == candidate["crop_x"]
+            assert int(profile.get("Crop", "Y")) == candidate["crop_y"]
+            assert int(profile.get("Crop", "W")) == candidate["crop_width"]
+            assert int(profile.get("Crop", "H")) == candidate["crop_height"]
+            assert profile.get("Crop", "FixedRatio") == "true"
+            assert profile.get("Crop", "Ratio")
+            assert profile.get("Crop", "Orientation") == "As Image"
+            assert profile.get("Crop", "Guide") == "Frame"
             assert profile.get("Local Contrast", "Amount", "") == ""
             assert profile.get("ColorToning", "Method", "") == ""
             assert profile.get("SharpenMicro", "Uniformity", "") == ""
+
+    async def test_generate_crop_candidates_uses_direct_image_dimensions(self, mock_ctx, tmp_path):
+        image_file = tmp_path / "photo.jpg"
+        PILImage.new("RGB", (3000, 2000), "gray").save(str(image_file), "JPEG")
+
+        result = await generate_crop_candidates(
+            mock_ctx,
+            str(image_file),
+            "vision_frame",
+            editing_vision={
+                "emotional_goal": "clean travel geometry",
+                "visual_anchor": "tram and rails",
+                "viewer_notice_first": "tram front",
+                "preserve": ["street context"],
+                "editing_moves": ["improve_composition"],
+            },
+        )
+
+        assert "error" not in result
+        assert result["dimension_source"] == "direct_image_metadata"
+        assert result["source_width"] == 3000
+        assert result["source_height"] == 2000
+        assert result["source_file_used"] == str(image_file)
+        assert result["used_preview_fallback"] is False
+        assert result["candidates"][0]["crop_width"] > 0
+        assert result["candidates"][0]["crop_height"] > 0
+
+    async def test_generate_crop_candidates_uses_preview_dimension_fallback_for_cr3(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"cr3")
+
+        async def create_probe_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (6400, 4266), "gray").save(str(out), "JPEG")
+            return {
+                "success": True,
+                "output_path": str(out),
+                "processing_time": 0.5,
+                "file_size": out.stat().st_size,
+            }
+
+        with (
+            patch("rawtherapee_mcp.server.get_effective_dimensions", return_value=(0, 0)),
+            patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_probe_preview),
+        ):
+            result = await generate_crop_candidates(
+                mock_ctx,
+                str(raw_file),
+                "vision_frame",
+                editing_vision={
+                    "emotional_goal": "warm city transit energy",
+                    "visual_anchor": "tram nose with rails and wires",
+                    "viewer_notice_first": "tram front and leading rails",
+                    "preserve": ["travel postcard feeling"],
+                    "editing_moves": ["emphasize_subject", "enhance_geometry", "improve_composition"],
+                },
+            )
+
+        assert "error" not in result
+        assert result["dimension_source"] == "rawtherapee_neutral_preview_dimensions"
+        assert result["source_width"] == 6400
+        assert result["source_height"] == 4266
+        assert result["used_preview_fallback"] is True
+        assert result["source_file_used"].endswith(".jpg")
+        assert [attempt["source"] for attempt in result["dimension_sources_attempted"]] == [
+            "direct_image_metadata",
+            "effective_exif_dimensions",
+            "rawtherapee_neutral_preview_dimensions",
+        ]
+        assert len(result["candidates"]) == 3
+
+    async def test_generate_crop_candidates_returns_structured_dimension_failure(self, mock_ctx_no_rt, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"cr3")
+
+        with patch("rawtherapee_mcp.server.get_effective_dimensions", return_value=(0, 0)):
+            result = await generate_crop_candidates(
+                mock_ctx_no_rt,
+                str(raw_file),
+                "vision_frame",
+                editing_vision={
+                    "emotional_goal": "warm city transit energy",
+                    "visual_anchor": "tram nose with rails and wires",
+                    "viewer_notice_first": "tram front and leading rails",
+                    "preserve": ["travel postcard feeling"],
+                    "editing_moves": ["improve_composition"],
+                },
+            )
+
+        assert "error" in result
+        assert result["dimension_source"] is None
+        assert result["source_width"] == 0
+        assert result["source_height"] == 0
+        assert result["source_file_used"] is None
+        assert result["used_preview_fallback"] is False
+        assert "dimension_sources_attempted" in result
+        assert [attempt["source"] for attempt in result["dimension_sources_attempted"]] == [
+            "direct_image_metadata",
+            "effective_exif_dimensions",
+            "rawtherapee_neutral_preview_dimensions",
+        ]
+        assert "RawTherapee CLI is not configured" in result["dimension_sources_attempted"][-1]["error"]
+        assert "suggestion" in result
 
     async def test_generate_vision_candidates_rural_vision_avoids_blue_split_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

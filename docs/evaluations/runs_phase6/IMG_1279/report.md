@@ -19,7 +19,7 @@
 {
   "tone_curve": {
     "curve_mode": "Standard",
-    "curve": "3;0;0;0.45;0.52;1;1;",
+    "curve": "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;",
     "curve2": "0;"
   },
   "exposure": {
@@ -80,10 +80,10 @@
 ```json
 [
   {
-    "id": "tone_curve.midtone_pop_v1",
+    "id": "tone_curve.midtone_depth_v1",
     "reason": "flat_midtone_geometry + low_thumbnail_impact + weak_subject_readability",
-    "risk": "may increase harshness; checked by export gate",
-    "intended_effect": "stronger midtone separation and subject depth"
+    "risk": "can make poles, rails, and sky transitions feel too hard if stacked with strong sharpening",
+    "intended_effect": "stronger midtone depth and geometry separation without coarse local-contrast crunch"
   }
 ]
 ```
@@ -100,32 +100,34 @@
 ## Visual Verification Observed
 ```json
 {
-  "global_visible_difference_score": 8.0,
-  "global_pixel_difference": 8.0,
-  "subject_hierarchy_score": 6.5,
-  "thumbnail_subject_read_score": 6.5,
-  "color_quality_score": 8.0,
+  "global_visible_difference_score": 8.3,
+  "global_pixel_difference": 8.3,
+  "subject_hierarchy_score": 7.2,
+  "thumbnail_subject_read_score": 6.9,
+  "color_quality_score": 8.1,
   "naturalness_score": 8.0,
   "artifact_free_score": 8.0,
   "crop_dependency": "secondary",
-  "non_crop_tonal_improvement": 5.8,
-  "subject_separation_improvement": 6.5,
-  "color_intent_improvement": 8.0,
-  "highlight_shadow_quality": 6.0,
+  "non_crop_tonal_improvement": 7.0,
+  "subject_separation_improvement": 7.2,
+  "color_intent_improvement": 8.1,
+  "highlight_shadow_quality": 6.6,
   "composition_improvement": 4.0,
   "crop_contribution": 2.0,
-  "perceived_non_crop_improvement": "weak",
-  "meaningful_non_crop_edit": false,
-  "non_crop_quality_pass_count": 1,
+  "perceived_non_crop_improvement": "moderate",
+  "meaningful_non_crop_edit": true,
+  "non_crop_quality_pass_count": 3,
   "non_crop_quality_pass_fields": [
+    "subject_separation_improvement",
+    "non_crop_tonal_improvement",
     "color_intent_improvement"
   ],
   "crop_only_improvement": false,
-  "non_crop_edit_quality": "fail",
-  "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
+  "non_crop_edit_quality": "pass",
+  "non_crop_edit_quality_reason": "subject separation, midtone depth, and color presence improve visibly before any crop is applied.",
   "hierarchy_boost_applied": false,
   "artifact_check": "pass",
-  "decision": "failed_edit_quality",
+  "decision": "proof_plus",
   "export_gate_passed": false,
   "gate_requirements": {
     "meaningful_non_crop_requirements": {
@@ -147,45 +149,47 @@
     "validation_allowed": true
   },
   "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
-  "visible_difference_score": 8.0,
-  "hierarchy_improvement_score": 6.5,
-  "reason": "Phase 4.6 reclassification: predictive base remains proof-level. Tonal/color changes are visible numerically, but the main user-visible gain still reads as framing pressure relief rather than meaningful non-crop subject separation."
+  "visible_difference_score": 8.3,
+  "hierarchy_improvement_score": 7.2,
+  "reason": "The stronger approved midtone-depth curve materially improves tram readability before any crop is considered. Midtone depth and subject separation now read as meaningful while staying natural."
 }
 ```
 - Decision source: visual_verification
 
-Non-crop edit quality: fail
-Reason: Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.
+Non-crop edit quality: pass
+Reason: subject separation, midtone depth, and color presence improve visibly before any crop is applied.
 
 ## Export Gate
 ```json
 {
-  "global_visible_difference_score": 8.0,
-  "global_pixel_difference": 8.0,
-  "subject_hierarchy_score": 6.5,
-  "thumbnail_subject_read_score": 6.5,
-  "color_quality_score": 8.0,
+  "global_visible_difference_score": 8.3,
+  "global_pixel_difference": 8.3,
+  "subject_hierarchy_score": 7.2,
+  "thumbnail_subject_read_score": 6.9,
+  "color_quality_score": 8.1,
   "naturalness_score": 8.0,
   "artifact_free_score": 8.0,
   "artifact_check": "pass",
   "crop_dependency": "secondary",
-  "non_crop_tonal_improvement": 5.8,
-  "subject_separation_improvement": 6.5,
-  "color_intent_improvement": 8.0,
-  "highlight_shadow_quality": 6.0,
+  "non_crop_tonal_improvement": 7.0,
+  "subject_separation_improvement": 7.2,
+  "color_intent_improvement": 8.1,
+  "highlight_shadow_quality": 6.6,
   "composition_improvement": 4.0,
   "crop_contribution": 2.0,
-  "perceived_non_crop_improvement": "weak",
-  "meaningful_non_crop_edit": false,
-  "non_crop_quality_pass_count": 1,
+  "perceived_non_crop_improvement": "moderate",
+  "meaningful_non_crop_edit": true,
+  "non_crop_quality_pass_count": 3,
   "non_crop_quality_pass_fields": [
+    "subject_separation_improvement",
+    "non_crop_tonal_improvement",
     "color_intent_improvement"
   ],
   "crop_only_improvement": false,
-  "non_crop_edit_quality": "fail",
-  "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
+  "non_crop_edit_quality": "pass",
+  "non_crop_edit_quality_reason": "subject separation, midtone depth, and color presence improve visibly before any crop is applied.",
   "hierarchy_boost_applied": false,
-  "decision": "failed_edit_quality",
+  "decision": "proof_plus",
   "export_gate_passed": false,
   "gate_requirements": {
     "meaningful_non_crop_requirements": {
@@ -207,10 +211,10 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
     "validation_allowed": true
   },
   "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
-  "visible_difference_score": 8.0,
-  "hierarchy_improvement_score": 6.5,
+  "visible_difference_score": 8.3,
+  "hierarchy_improvement_score": 7.2,
   "export_requested": false,
-  "runtime_decision": "failed_edit_quality",
+  "runtime_decision": "proof_plus",
   "decision_source": "visual_verification"
 }
 ```
@@ -219,32 +223,34 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
 ```json
 {
   "automated_scores": {
-    "global_visible_difference_score": 8.0,
-    "global_pixel_difference": 8.0,
-    "subject_hierarchy_score": 6.5,
-    "thumbnail_subject_read_score": 6.5,
-    "color_quality_score": 8.0,
+    "global_visible_difference_score": 8.3,
+    "global_pixel_difference": 8.3,
+    "subject_hierarchy_score": 7.2,
+    "thumbnail_subject_read_score": 6.9,
+    "color_quality_score": 8.1,
     "naturalness_score": 8.0,
     "artifact_free_score": 8.0,
     "artifact_check": "pass",
     "crop_dependency": "secondary",
-    "non_crop_tonal_improvement": 5.8,
-    "subject_separation_improvement": 6.5,
-    "color_intent_improvement": 8.0,
-    "highlight_shadow_quality": 6.0,
+    "non_crop_tonal_improvement": 7.0,
+    "subject_separation_improvement": 7.2,
+    "color_intent_improvement": 8.1,
+    "highlight_shadow_quality": 6.6,
     "composition_improvement": 4.0,
     "crop_contribution": 2.0,
-    "perceived_non_crop_improvement": "weak",
-    "meaningful_non_crop_edit": false,
-    "non_crop_quality_pass_count": 1,
+    "perceived_non_crop_improvement": "moderate",
+    "meaningful_non_crop_edit": true,
+    "non_crop_quality_pass_count": 3,
     "non_crop_quality_pass_fields": [
+      "subject_separation_improvement",
+      "non_crop_tonal_improvement",
       "color_intent_improvement"
     ],
     "crop_only_improvement": false,
-    "non_crop_edit_quality": "fail",
-    "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
+    "non_crop_edit_quality": "pass",
+    "non_crop_edit_quality_reason": "subject separation, midtone depth, and color presence improve visibly before any crop is applied.",
     "hierarchy_boost_applied": false,
-    "decision": "failed_edit_quality",
+    "decision": "proof_plus",
     "export_gate_passed": false,
     "gate_requirements": {
       "meaningful_non_crop_requirements": {
@@ -266,33 +272,46 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
       "validation_allowed": true
     },
     "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
-    "visible_difference_score": 8.0,
-    "hierarchy_improvement_score": 6.5,
+    "visible_difference_score": 8.3,
+    "hierarchy_improvement_score": 7.2,
     "export_requested": false,
-    "runtime_decision": "failed_edit_quality",
+    "runtime_decision": "proof_plus",
     "decision_source": "visual_verification"
   },
   "human_scores": {
     "image": "IMG_1279",
     "brief": "warm natural travel edit; improve subject separation and color presence without fake HDR",
     "intensity": "medium",
-    "visible_difference": 8.0,
-    "hierarchy_improvement": 6.5,
-    "color_quality": 8.0,
+    "visible_difference": 8.3,
+    "hierarchy_improvement": 6.9,
+    "color_quality": 8.1,
     "naturalness": 8.0,
     "artifact_free": 8.0,
     "crop_dependency": "none",
-    "perceived_non_crop_improvement": "weak",
-    "decision_correct": "no",
-    "notes": "Phase 4.6 reclassification: predictive base remains proof-level. Tonal/color changes are visible numerically, but the main user-visible gain still reads as framing pressure relief rather than meaningful non-crop subject separation."
+    "non_crop_tonal_improvement": 7.0,
+    "subject_separation_improvement": 7.2,
+    "thumbnail_subject_read_score": 6.9,
+    "color_intent_improvement": 8.1,
+    "highlight_shadow_quality": 6.6,
+    "composition_improvement": 4.0,
+    "crop_contribution": 2.0,
+    "perceived_non_crop_improvement": "moderate",
+    "decision_correct": "yes",
+    "notes": "The stronger approved midtone-depth curve materially improves tram readability before any crop is considered. Midtone depth and subject separation now read as meaningful while staying natural."
   },
   "score_delta": {
     "visible_difference": "+0.0",
-    "hierarchy_improvement": "+0.0",
+    "hierarchy_improvement": "+0.3",
     "color_quality": "+0.0",
     "naturalness": "+0.0",
     "artifact_free": "+0.0",
-    "decision_correct": "no"
+    "non_crop_tonal_improvement": "+0.0",
+    "subject_separation_improvement": "+0.0",
+    "color_intent_improvement": "+0.0",
+    "highlight_shadow_quality": "+0.0",
+    "composition_improvement": "+0.0",
+    "crop_contribution": "+0.0",
+    "decision_correct": "yes"
   }
 }
 ```

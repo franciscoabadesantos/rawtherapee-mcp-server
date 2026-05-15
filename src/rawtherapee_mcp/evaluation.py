@@ -108,8 +108,19 @@ def _contains_banned_controls(parameters: dict[str, Any]) -> dict[str, bool]:
         isinstance(tone_curve_group, dict)
         and find_approved_curve("Exposure", "Curve", tone_curve_group.get("curve")) is not None
     )
+    luminance_curve_group = parameters.get("luminance_curve", {})
+    approved_lh_curve = isinstance(luminance_curve_group, dict) and (
+        "lh_curve" not in luminance_curve_group
+        or find_approved_curve("Luminance Curve", "lhCurve", luminance_curve_group.get("lh_curve")) is not None
+    )
+    approved_hh_curve = isinstance(luminance_curve_group, dict) and (
+        "hh_curve" not in luminance_curve_group
+        or find_approved_curve("Luminance Curve", "hhCurve", luminance_curve_group.get("hh_curve")) is not None
+    )
     arbitrary_curves_used = "rgb_curves" in parameters or (
         "tone_curve" in parameters and not approved_tone_curve
+    ) or (
+        "luminance_curve" in parameters and (not approved_lh_curve or not approved_hh_curve)
     )
     return {
         "local_contrast_amount_emitted": local_contrast_used,

@@ -94,6 +94,11 @@ def find_approved_curve(section: str, key: str, value: object) -> dict[str, Any]
     """Resolve approved-curve metadata for one exact PP3 section/key/value triple."""
     serialized_value = _serialize_pp3_like(value)
     for curve in get_approved_curve_registry().values():
+        fields = curve.get("pp3_fields")
+        if isinstance(fields, dict):
+            expected = fields.get(_control_id(section, key))
+            if expected is not None and _serialize_pp3_like(expected) == serialized_value:
+                return curve
         if (
             str(curve.get("pp3_section", "")) == section
             and str(curve.get("pp3_key", "")) == key

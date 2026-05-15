@@ -35,13 +35,33 @@ class TestControlPolicy:
         assert is_control_allowed_autonomous("Exposure", "Curve", curve["curve_string"])
         assert is_control_allowed_autonomous("Exposure", "Curve2", curve["curve2"])
 
+    def test_approved_tonal_depth_luminance_curve_fields_pass_exact_value_validation(self) -> None:
+        preset = get_approved_curve("luminance_curve.landscape_depth_v1")
+        assert preset is not None
+        fields = preset["pp3_fields"]
+        assert is_control_allowed_autonomous("Luminance Curve", "lhCurve", fields["Luminance Curve.lhCurve"])
+        assert is_control_allowed_autonomous("Luminance Curve", "hhCurve", fields["Luminance Curve.hhCurve"])
+
     def test_arbitrary_exposure_curve_is_still_blocked(self) -> None:
         assert not is_control_allowed_autonomous("Exposure", "Curve", "3;0;0;0.5;0.7;1;1;")
+
+    def test_arbitrary_luminance_curve_strings_are_still_blocked(self) -> None:
+        assert not is_control_allowed_autonomous("Luminance Curve", "lhCurve", "3;0;0;0.5;0.7;1;1;")
+        assert not is_control_allowed_autonomous("Luminance Curve", "hhCurve", "3;0;0;0.5;0.7;1;1;")
 
     def test_find_approved_curve_resolves_metadata_from_exact_value(self) -> None:
         curve = find_approved_curve("Exposure", "Curve", "3;0;0;0.45;0.52;1;1;")
         assert curve is not None
         assert curve["id"] == "tone_curve.midtone_pop_v1"
+
+    def test_find_approved_curve_resolves_luminance_preset_metadata_from_exact_value(self) -> None:
+        curve = find_approved_curve(
+            "Luminance Curve",
+            "lhCurve",
+            "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;",
+        )
+        assert curve is not None
+        assert curve["id"] == "luminance_curve.landscape_depth_v1"
 
     def test_unknown_controls_default_to_manual_only(self) -> None:
         assert not is_control_allowed_autonomous("Unknown Section", "Unknown Key", 1)
@@ -67,6 +87,22 @@ class TestControlPolicy:
         assert not result.allowed
         assert any(item.control_id == "Exposure.Curve" for item in result.blocked_controls)
 
+    def test_validate_autonomous_parameters_blocks_modified_luminance_curve_strings(self) -> None:
+        result = validate_autonomous_parameters(
+            {
+                "luminance_curve": {
+                    "enabled": True,
+                    "contrast": 10,
+                    "avoid_color_shift": True,
+                    "lh_curve": "5;0;0;0.18;0.13;0.50;0.52;0.78;0.86;1;1;",
+                    "hh_curve": "5;0;0;0.30;0.28;0.62;0.56;0.84;0.80;1;0.94;",
+                }
+            }
+        )
+
+        assert not result.allowed
+        assert any(item.control_id == "Luminance Curve.lhCurve" for item in result.blocked_controls)
+
     def test_validate_autonomous_parameters_blocks_out_of_range_values(self) -> None:
         result = validate_autonomous_parameters({"exposure": {"contrast": 80}})
         assert not result.allowed
@@ -77,6 +113,11 @@ class TestControlPolicy:
         result = validate_autonomous_parameters({"future_magic_control": {"value": 1}})
         assert not result.allowed
         assert any("Unknown parameter group" in item.reason for item in result.blocked_controls)
+
+    def test_validate_autonomous_parameters_blocks_unknown_pp3_fields_in_known_group(self) -> None:
+        result = validate_autonomous_parameters({"luminance_curve": {"mystery_field": "0;"}})
+        assert not result.allowed
+        assert any("Unknown control key" in item.reason for item in result.blocked_controls)
 
     def test_get_control_risk_returns_manifest_risks(self) -> None:
         risks = get_control_risk("HSV Equalizer", "HCurve")

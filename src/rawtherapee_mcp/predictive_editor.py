@@ -62,6 +62,8 @@ _CONTROL_TO_FRIENDLY: dict[str, tuple[str, str]] = {
     "Luminance Curve.Contrast": ("luminance_curve", "contrast"),
     "Luminance Curve.AvoidColorShift": ("luminance_curve", "avoid_color_shift"),
     "Luminance Curve.Chromaticity": ("luminance_curve", "chromaticity"),
+    "Luminance Curve.lhCurve": ("luminance_curve", "lh_curve"),
+    "Luminance Curve.hhCurve": ("luminance_curve", "hh_curve"),
     "Vibrance.Enabled": ("vibrance", "enabled"),
     "Vibrance.Pastels": ("vibrance", "pastels"),
     "Vibrance.Saturated": ("vibrance", "saturated"),
@@ -360,11 +362,47 @@ def _curve_avoid_contexts(
     avoid: set[str] = set()
     if any(token in text for token in ("portrait", "skin", "face")):
         avoid.add("portrait_skin_fragile")
-    if any(token in text for token in ("night", "iso", "high iso", "low light")):
+    if any(token in text for token in ("night", "iso", "high iso", "low light", "low-light")):
         avoid.add("night_high_iso")
+    if any(token in text for token in ("high iso", "heavy noise", "noisy", "grainy")):
+        avoid.add("heavy_noise")
+    if "high" in text and "iso" in text and "low" not in text:
+        avoid.add("night_high_iso_high_intensity")
     if {"bright_sky_needs_control", "washed_highlights"} & issue_names:
         avoid.add("already_high_contrast")
     return avoid
+
+
+def _active_preset_contexts(
+    *,
+    style: str,
+    user_brief: str | None,
+    issue_names: set[str],
+) -> set[str]:
+    text = f"{style} {user_brief or ''}".lower()
+    contexts = set(issue_names)
+    if any(token in text for token in ("landscape", "shore", "coastal", "bay", "sky", "cloud")):
+        contexts.add("landscape_sky")
+    if any(token in text for token in ("low light", "low-light", "night", "dusk", "sunset")):
+        contexts.add("low_light_high_iso")
+    return contexts
+
+
+def _preset_control_pairs(preset: dict[str, Any]) -> list[tuple[str, object]]:
+    fields = preset.get("pp3_fields")
+    if isinstance(fields, dict):
+        return [(str(control_id), value) for control_id, value in fields.items() if isinstance(control_id, str)]
+
+    curve_mode = str(preset.get("curve_mode", "Standard"))
+    curve_string = str(preset.get("curve_string", ""))
+    curve2 = str(preset.get("curve2", "0;"))
+    if not curve_string:
+        return []
+    return [
+        ("Exposure.CurveMode", curve_mode),
+        ("Exposure.Curve", curve_string),
+        ("Exposure.Curve2", curve2),
+    ]
 
 
 def _approved_curve_controls(
@@ -374,42 +412,52 @@ def _approved_curve_controls(
     user_brief: str | None,
 ) -> tuple[list[tuple[str, object]], list[dict[str, Any]]]:
     issue_names = _issue_names(diagnosis)
-    hierarchy_hits = issue_names & {"flat_midtone_geometry", "weak_subject_readability", "low_thumbnail_impact"}
-    if len(hierarchy_hits) < 2:
-        return [], []
-
-    curve = get_approved_curve("tone_curve.midtone_pop_v1")
-    if not curve or curve.get("autonomous_allowed") is not True:
-        return [], []
-
-    allowed_contexts = {str(item) for item in curve.get("allowed_contexts", []) if isinstance(item, str)}
-    if not hierarchy_hits & allowed_contexts:
-        return [], []
-
-    avoid_contexts = {str(item) for item in curve.get("avoid_contexts", []) if isinstance(item, str)}
+    active_contexts = _active_preset_contexts(style=style, user_brief=user_brief, issue_names=issue_names)
     active_avoid_contexts = _curve_avoid_contexts(style=style, user_brief=user_brief, issue_names=issue_names)
-    if active_avoid_contexts & avoid_contexts:
-        return [], []
+    hierarchy_hits = issue_names & {"flat_midtone_geometry", "weak_subject_readability", "low_thumbnail_impact"}
+    controls: list[tuple[str, object]] = []
+    used: list[dict[str, Any]] = []
 
-    curve_mode = str(curve.get("curve_mode", "Standard"))
-    curve_string = str(curve.get("curve_string", ""))
-    curve2 = str(curve.get("curve2", "0;"))
-    if not curve_string:
-        return [], []
+    candidate_ids: list[str] = []
+    if len(hierarchy_hits) >= 2:
+        candidate_ids.append("tone_curve.midtone_depth_v1")
+    if {"bright_sky_needs_control", "washed_highlights"} & issue_names or "landscape_sky" in active_contexts:
+        candidate_ids.append("luminance_curve.landscape_depth_v1")
+    if "low_light_high_iso" in active_contexts or "blocked_shadows" in issue_names:
+        candidate_ids.append("luminance_curve.low_light_lift_v1")
 
-    reason = " + ".join(sorted(hierarchy_hits))
-    return [
-        ("Exposure.CurveMode", curve_mode),
-        ("Exposure.Curve", curve_string),
-        ("Exposure.Curve2", curve2),
-    ], [
-        {
-            "id": str(curve.get("id", "tone_curve.midtone_pop_v1")),
-            "reason": reason,
-            "risk": "may increase harshness; checked by export gate",
-            "intended_effect": str(curve.get("intended_effect", "")),
-        }
-    ]
+    for preset_id in candidate_ids:
+        preset = get_approved_curve(preset_id)
+        if not preset or preset.get("autonomous_allowed") is not True:
+            continue
+
+        allowed_contexts = {str(item) for item in preset.get("allowed_contexts", []) if isinstance(item, str)}
+        if allowed_contexts and not (active_contexts & allowed_contexts):
+            continue
+
+        avoid_contexts = {str(item) for item in preset.get("avoid_contexts", []) if isinstance(item, str)}
+        if active_avoid_contexts & avoid_contexts:
+            continue
+
+        pairs = _preset_control_pairs(preset)
+        if not pairs:
+            continue
+
+        controls.extend(pairs)
+        justification_hits = sorted((active_contexts & allowed_contexts) or active_contexts)
+        used.append(
+            {
+                "id": str(preset.get("id", preset_id)),
+                "reason": " + ".join(justification_hits[:3]),
+                "risk": "; ".join(
+                    [str(item) for item in preset.get("risk_notes", []) if isinstance(item, str)]
+                )
+                or "checked by export gate",
+                "intended_effect": str(preset.get("intended_effect", "")),
+            }
+        )
+
+    return controls, used
 
 
 def _planned_controls_from_diagnosis(

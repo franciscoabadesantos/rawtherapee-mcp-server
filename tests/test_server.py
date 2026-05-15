@@ -389,7 +389,7 @@ class TestEditorialWorkflowTools:
         assert "expected_global_change" in result["planned_scores"]
         assert "local_contrast" not in result["parameters"]
         assert result["parameters"]["tone_curve"]["curve_mode"] == "Standard"
-        assert result["parameters"]["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
+        assert result["parameters"]["tone_curve"]["curve"] == "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;"
         assert "rgb_curves" not in result["parameters"]
         hsv = result["parameters"].get("hsv_equalizer", {})
         assert "h_curve" not in hsv
@@ -506,8 +506,9 @@ class TestEditorialWorkflowTools:
         assert params["vibrance"]["pastels"] >= 8
         assert params["vibrance"]["saturated"] in range(3, 6)
         assert params["tone_curve"]["curve_mode"] == "Standard"
-        assert params["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
-        assert plan["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
+        assert params["tone_curve"]["curve"] == "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;"
+        assert plan["approved_curves_used"][0]["id"] == "tone_curve.midtone_depth_v1"
+        assert params["tone_curve"]["curve"] == "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;"
         validation = validate_autonomous_parameters(params)
         assert validation.allowed is True
         assert "local_contrast" not in params
@@ -550,6 +551,64 @@ class TestEditorialWorkflowTools:
 
         assert "tone_curve" not in plan["parameters"]
         assert plan["approved_curves_used"] == []
+
+    def test_predictive_landscape_tonal_depth_preset_triggers_for_landscape_sky_context(self):
+        plan = build_predictive_edit_plan(
+            style="landscape cleanup with controlled sky highlights",
+            intensity="medium",
+            user_brief="coastal landscape with bright sky and haze",
+            diagnosis_payload={
+                "style": "landscape cleanup with controlled sky highlights",
+                "intensity": "medium",
+                "diagnosis": [
+                    {"issue": "dull_color_presence", "severity": 0.45, "evidence": "muted greens"},
+                    {"issue": "bright_sky_needs_control", "severity": 0.35, "evidence": "bright clouds"},
+                ],
+                "crop_need": "low",
+            },
+        )
+
+        assert plan["parameters"]["luminance_curve"]["lh_curve"] == "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;"
+        assert plan["parameters"]["luminance_curve"]["hh_curve"] == "5;0;0;0.28;0.24;0.60;0.52;0.82;0.74;1;0.90;"
+        assert any(item["id"] == "luminance_curve.landscape_depth_v1" for item in plan["approved_curves_used"])
+        validation = validate_autonomous_parameters(plan["parameters"])
+        assert validation.allowed is True
+
+    def test_predictive_low_light_tonal_depth_preset_triggers_for_low_light_context(self):
+        plan = build_predictive_edit_plan(
+            style="low-light natural recovery",
+            intensity="low",
+            user_brief="dusk beach subject with blocked shadows",
+            diagnosis_payload={
+                "style": "low-light natural recovery",
+                "intensity": "low",
+                "diagnosis": [
+                    {"issue": "blocked_shadows", "severity": 0.45, "evidence": "subject too dark"},
+                    {"issue": "dull_color_presence", "severity": 0.35, "evidence": "low-light color loss"},
+                ],
+                "crop_need": "low",
+            },
+        )
+
+        assert plan["parameters"]["luminance_curve"]["lh_curve"] == "5;0;0;0.14;0.22;0.40;0.52;0.72;0.84;1;1;"
+        assert plan["parameters"]["luminance_curve"]["hh_curve"] == "5;0;0;0.30;0.28;0.66;0.60;0.86;0.82;1;0.96;"
+        assert any(item["id"] == "luminance_curve.low_light_lift_v1" for item in plan["approved_curves_used"])
+
+    def test_predictive_low_light_tonal_depth_preset_is_blocked_in_fragile_portrait_context(self):
+        plan = build_predictive_edit_plan(
+            style="night portrait recovery",
+            intensity="high",
+            user_brief="night portrait high iso skin tones",
+            diagnosis_payload={
+                "style": "night portrait recovery",
+                "intensity": "high",
+                "diagnosis": [{"issue": "blocked_shadows", "severity": 0.6, "evidence": "dark face"}],
+                "crop_need": "low",
+            },
+        )
+
+        assert "lh_curve" not in plan.get("parameters", {}).get("luminance_curve", {})
+        assert not any(item["id"] == "luminance_curve.low_light_lift_v1" for item in plan["approved_curves_used"])
 
     def test_predictive_medium_dull_color_presence_uses_stronger_vibrance(self):
         plan = build_predictive_edit_plan(
@@ -718,8 +777,38 @@ class TestEditorialWorkflowTools:
             )
 
         assert result["approved_curves_used"]
-        assert result["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
-        assert result["parameters"]["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
+        assert result["approved_curves_used"][0]["id"] == "tone_curve.midtone_depth_v1"
+        assert result["parameters"]["tone_curve"]["curve"] == "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;"
+
+    async def test_auto_edit_predictive_reports_tonal_depth_preset_usage(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                style="landscape cleanup with controlled sky highlights",
+                intensity="medium",
+                user_brief="coastal landscape with bright sky and haze",
+                diagnosis_override={
+                    "style": "landscape cleanup with controlled sky highlights",
+                    "intensity": "medium",
+                    "diagnosis": [
+                        {"issue": "dull_color_presence", "severity": 0.45, "evidence": "muted greens"},
+                        {"issue": "bright_sky_needs_control", "severity": 0.35, "evidence": "bright clouds"},
+                    ],
+                    "crop_need": "low",
+                },
+            )
+
+        assert any(item["id"] == "luminance_curve.landscape_depth_v1" for item in result["approved_curves_used"])
+        assert result["parameters"]["luminance_curve"]["lh_curve"] == "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;"
 
     async def test_planner_scores_alone_cannot_produce_export_or_proof_plus(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"

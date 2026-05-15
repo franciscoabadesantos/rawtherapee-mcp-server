@@ -1,6 +1,9 @@
 [
   {
-    "raw_path": "/home/franciscosantos/Pictures/rawtherapee-output/IMG_1279.jpg",
+    "image_id": "IMG_1279",
+    "raw_path": "/mnt/c/Users/santo/Pictures/IMG_1279.CR3",
+    "source_exists": true,
+    "source_type": "raw",
     "brief": "warm natural travel edit; improve subject separation and color presence without fake HDR",
     "intensity": "medium",
     "expected_main_subject": "tram",
@@ -10,21 +13,47 @@
       "cyan split",
       "fake HDR"
     ],
-    "notes": "Phase 3 regression case from Barcelona tram session. Replace with source CR3 path when available."
+    "category": "travel_street_geometry",
+    "notes": "Phase 3 / Phase 6 regression case from the Barcelona tram session."
   },
   {
-    "raw_path": "/path/to/travel_street_geometry.CR3",
-    "brief": "clean travel street edit with stronger geometry hierarchy and natural color",
+    "image_id": "IMG_1850",
+    "raw_path": "/mnt/c/Users/santo/Pictures/IMG_1850.CR3",
+    "source_exists": true,
+    "source_type": "raw",
+    "brief": "landscape cleanup with controlled sky highlights, reduced haze, and natural tonal depth",
     "intensity": "medium",
-    "expected_main_subject": "street scene",
+    "expected_main_subject": "coastal hillside and shoreline",
     "avoid": [
-      "crop-only",
       "fake HDR",
-      "cyan split"
-    ]
+      "gray haze",
+      "over-sharpening"
+    ],
+    "category": "landscape_sky",
+    "notes": "Real local coastal landscape RAW with bright cloud cover, atmospheric haze, and green hillside geometry."
   },
   {
-    "raw_path": "/path/to/portrait_skin.CR3",
+    "image_id": "IMG_3709",
+    "raw_path": "/mnt/c/Users/santo/Pictures/IMG_3709.CR3",
+    "source_exists": true,
+    "source_type": "raw",
+    "brief": "low-light natural recovery with readable subject separation and restrained shadow lift",
+    "intensity": "low",
+    "expected_main_subject": "person on beach at dusk",
+    "avoid": [
+      "crunchy noise",
+      "over-bright shadows",
+      "plastic smoothing"
+    ],
+    "category": "low_light_high_iso",
+    "notes": "Real local dusk beach subject RAW. The scene is low-light, but not a strong skin-portrait calibration case."
+  },
+  {
+    "image_id": "portrait_skin_01",
+    "raw_path": null,
+    "source_exists": false,
+    "source_type": "raw",
+    "disabled": true,
     "brief": "natural portrait polish; improve subject readability while preserving believable skin",
     "intensity": "medium",
     "expected_main_subject": "person",
@@ -32,32 +61,16 @@
       "orange skin",
       "crunchy detail",
       "over-saturation"
-    ]
+    ],
+    "category": "portrait_skin",
+    "missing_reason": "No matching RAW found locally for a real portrait-skin evaluation case."
   },
   {
-    "raw_path": "/path/to/landscape_sky.CR3",
-    "brief": "landscape cleanup with controlled sky highlights and natural tonal depth",
-    "intensity": "medium",
-    "expected_main_subject": "landscape",
-    "avoid": [
-      "fake HDR",
-      "gray haze",
-      "over-sharpening"
-    ]
-  },
-  {
-    "raw_path": "/path/to/low_light_high_iso.CR3",
-    "brief": "low-light natural recovery with readable subject and restrained noise emphasis",
-    "intensity": "low",
-    "expected_main_subject": "night subject",
-    "avoid": [
-      "crunchy noise",
-      "over-bright shadows",
-      "plastic smoothing"
-    ]
-  },
-  {
-    "raw_path": "/path/to/flat_daylight.CR3",
+    "image_id": "flat_daylight_01",
+    "raw_path": null,
+    "source_exists": false,
+    "source_type": "raw",
+    "disabled": true,
     "brief": "flat daylight enhancement with subtle depth and natural color presence",
     "intensity": "medium",
     "expected_main_subject": "daylight scene",
@@ -65,10 +78,16 @@
       "over-contrast",
       "fake filter look",
       "crop-only"
-    ]
+    ],
+    "category": "flat_daylight",
+    "missing_reason": "No matching RAW found locally for a flat daylight evaluation case."
   },
   {
-    "raw_path": "/path/to/mixed_lighting.CR3",
+    "image_id": "mixed_lighting_01",
+    "raw_path": null,
+    "source_exists": false,
+    "source_type": "raw",
+    "disabled": true,
     "brief": "mixed-lighting correction to improve neutrality and local readability",
     "intensity": "medium",
     "expected_main_subject": "mixed-light scene",
@@ -76,10 +95,16 @@
       "color cast swings",
       "cyan split",
       "orange shift"
-    ]
+    ],
+    "category": "mixed_lighting",
+    "missing_reason": "No matching RAW found locally for a mixed-lighting evaluation case."
   },
   {
-    "raw_path": "/path/to/green_foliage.CR3",
+    "image_id": "green_foliage_01",
+    "raw_path": null,
+    "source_exists": false,
+    "source_type": "raw",
+    "disabled": true,
     "brief": "green foliage natural enhancement without oversaturation or hue shift",
     "intensity": "medium",
     "expected_main_subject": "foliage",
@@ -87,6 +112,25 @@
       "neon greens",
       "yellow/green cast",
       "fake HDR"
-    ]
+    ],
+    "category": "green_foliage",
+    "missing_reason": "No matching RAW found locally for a foliage-focused evaluation case."
+  },
+  {
+    "image_id": "travel_street_geometry_02",
+    "raw_path": null,
+    "source_exists": false,
+    "source_type": "raw",
+    "disabled": true,
+    "brief": "clean travel street edit with stronger geometry hierarchy and natural color",
+    "intensity": "medium",
+    "expected_main_subject": "street scene",
+    "avoid": [
+      "crop-only",
+      "fake HDR",
+      "cyan split"
+    ],
+    "category": "travel_street_geometry",
+    "missing_reason": "No second real travel/street geometry RAW was found locally beyond IMG_1279."
   }
 ]

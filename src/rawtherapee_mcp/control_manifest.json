@@ -16,6 +16,11 @@
       "id": "tone_curve.midtone_pop_v1",
       "pp3_section": "Exposure",
       "pp3_key": "Curve",
+      "pp3_fields": {
+        "Exposure.CurveMode": "Standard",
+        "Exposure.Curve": "3;0;0;0.45;0.52;1;1;",
+        "Exposure.Curve2": "0;"
+      },
       "curve_mode": "Standard",
       "curve2": "0;",
       "curve_string": "3;0;0;0.45;0.52;1;1;",
@@ -37,6 +42,99 @@
         "docs/reference/pp3_evidence/Exposure.Curve/diff.json",
         "docs/reference/pp3_evidence/Exposure.Curve/notes.md",
         "docs/evaluations/runs_phase5/IMG_1279/report.json"
+      ],
+      "autonomous_allowed": true
+    },
+    "tone_curve.midtone_depth_v1": {
+      "id": "tone_curve.midtone_depth_v1",
+      "pp3_section": "Exposure",
+      "pp3_key": "Curve",
+      "pp3_fields": {
+        "Exposure.CurveMode": "Standard",
+        "Exposure.Curve": "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;",
+        "Exposure.Curve2": "0;"
+      },
+      "curve_mode": "Standard",
+      "curve2": "0;",
+      "curve_string": "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;",
+      "intended_effect": "stronger midtone depth and geometry separation without coarse local-contrast crunch",
+      "allowed_contexts": [
+        "flat_midtone_geometry",
+        "weak_subject_readability",
+        "low_thumbnail_impact"
+      ],
+      "avoid_contexts": [
+        "already_high_contrast",
+        "portrait_skin_fragile",
+        "night_high_iso_high_intensity"
+      ],
+      "risk_notes": [
+        "can make poles, rails, and sky transitions feel too hard if stacked with strong sharpening"
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Exposure.Curve/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Curve/notes.md",
+        "docs/evaluations/runs_phase8/IMG_1279/report.json"
+      ],
+      "autonomous_allowed": true
+    },
+    "luminance_curve.landscape_depth_v1": {
+      "id": "luminance_curve.landscape_depth_v1",
+      "pp3_fields": {
+        "Luminance Curve.Enabled": true,
+        "Luminance Curve.Contrast": 12,
+        "Luminance Curve.AvoidColorShift": true,
+        "Luminance Curve.lhCurve": "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;",
+        "Luminance Curve.hhCurve": "5;0;0;0.28;0.24;0.60;0.52;0.82;0.74;1;0.90;"
+      },
+      "intended_effect": "increase landscape and midtone depth while preserving natural color relationships",
+      "allowed_contexts": [
+        "flat_midtone_geometry",
+        "weak_subject_readability",
+        "bright_sky_needs_control",
+        "landscape_sky"
+      ],
+      "avoid_contexts": [
+        "portrait_skin_fragile",
+        "heavy_noise",
+        "night_high_iso_high_intensity"
+      ],
+      "risk_notes": [
+        "may make haze transitions or cloud edges feel too hard if stacked with strong contrast"
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Luminance Curve.lhCurve/notes.md",
+        "docs/reference/pp3_evidence/Luminance Curve.hhCurve/notes.md",
+        "docs/evaluations/runs_phase8/IMG_1850/report.json"
+      ],
+      "autonomous_allowed": true
+    },
+    "luminance_curve.low_light_lift_v1": {
+      "id": "luminance_curve.low_light_lift_v1",
+      "pp3_fields": {
+        "Luminance Curve.Enabled": true,
+        "Luminance Curve.Contrast": 9,
+        "Luminance Curve.AvoidColorShift": true,
+        "Luminance Curve.lhCurve": "5;0;0;0.14;0.22;0.40;0.52;0.72;0.84;1;1;",
+        "Luminance Curve.hhCurve": "5;0;0;0.30;0.28;0.66;0.60;0.86;0.82;1;0.96;"
+      },
+      "intended_effect": "lift subject-facing low-light midtones without washing out shadows or amplifying color drift",
+      "allowed_contexts": [
+        "blocked_shadows",
+        "low_light_high_iso"
+      ],
+      "avoid_contexts": [
+        "portrait_skin_fragile",
+        "heavy_noise",
+        "night_high_iso_high_intensity"
+      ],
+      "risk_notes": [
+        "can make low-light noise more obvious if used aggressively"
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Luminance Curve.lhCurve/notes.md",
+        "docs/reference/pp3_evidence/Luminance Curve.hhCurve/notes.md",
+        "docs/evaluations/runs_phase8/IMG_3709/report.json"
       ],
       "autonomous_allowed": true
     }
@@ -277,7 +375,8 @@
       "ui_name": "Exposure > Tone Curve",
       "autonomous_allowed": "approved_curve_only",
       "approved_values": [
-        "3;0;0;0.45;0.52;1;1;"
+        "3;0;0;0.45;0.52;1;1;",
+        "5;0;0;0.18;0.12;0.45;0.54;0.76;0.90;1;1;"
       ],
       "manual_allowed": true,
       "value_type": "pp3_curve_string",
@@ -669,6 +768,54 @@
         "tests/test_pp3_generator.py",
         "docs/reference/pp3_evidence/Luminance Curve.Chromaticity/diff.json",
         "docs/reference/pp3_evidence/Luminance Curve.Chromaticity/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Luminance Curve.lhCurve": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "lhCurve",
+      "ui_name": "Exposure > L*a*b* Adjustments > LH Curve",
+      "autonomous_allowed": "approved_curve_only",
+      "approved_values": [
+        "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;",
+        "5;0;0;0.14;0.22;0.40;0.52;0.72;0.84;1;1;"
+      ],
+      "manual_allowed": true,
+      "value_type": "pp3_curve_string",
+      "expected_effect": "exact approved tonal-depth shaping for lower luminance regions",
+      "risks": [
+        "muddy or lifted lower midtones if the curve drifts from validated preset values"
+      ],
+      "interactions": [
+        "Should be paired only with approved hhCurve values from the same luminance preset."
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Luminance Curve.lhCurve/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Luminance Curve.hhCurve": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "hhCurve",
+      "ui_name": "Exposure > L*a*b* Adjustments > HH Curve",
+      "autonomous_allowed": "approved_curve_only",
+      "approved_values": [
+        "5;0;0;0.28;0.24;0.60;0.52;0.82;0.74;1;0.90;",
+        "5;0;0;0.30;0.28;0.66;0.60;0.86;0.82;1;0.96;"
+      ],
+      "manual_allowed": true,
+      "value_type": "pp3_curve_string",
+      "expected_effect": "exact approved highlight and upper-midtone rolloff shaping for tonal depth",
+      "risks": [
+        "unnatural highlight compression if the curve drifts from validated preset values"
+      ],
+      "interactions": [
+        "Should be paired only with approved lhCurve values from the same luminance preset."
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Luminance Curve.hhCurve/notes.md"
       ],
       "confidence": "low",
       "pending_evidence": true

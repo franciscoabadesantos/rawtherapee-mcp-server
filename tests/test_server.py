@@ -9,6 +9,8 @@ import pytest
 from fastmcp.tools import ToolResult
 from PIL import Image as PILImage
 
+from rawtherapee_mcp.control_policy import validate_autonomous_parameters
+from rawtherapee_mcp.predictive_editor import build_predictive_edit_plan
 from rawtherapee_mcp.server import (
     add_luminance_adjustment,
     adjust_crop_position,
@@ -471,6 +473,117 @@ class TestEditorialWorkflowTools:
         assert "highlight_rolloff" in params
         assert "highlights" in params["highlight_rolloff"]
         assert "highlight_compression_threshold" in params["highlight_rolloff"]
+
+    def test_predictive_hierarchy_boost_strengthens_safe_controls(self):
+        plan = build_predictive_edit_plan(
+            style="warm natural travel",
+            intensity="medium",
+            user_brief="Barcelona tram travel frame",
+            diagnosis_payload={
+                "style": "warm natural travel",
+                "intensity": "medium",
+                "diagnosis": [
+                    {"issue": "flat_midtone_geometry", "severity": 0.65, "evidence": "flat rails"},
+                    {"issue": "weak_subject_readability", "severity": 0.55, "evidence": "tram competes"},
+                    {"issue": "low_thumbnail_impact", "severity": 0.55, "evidence": "weak first read"},
+                    {"issue": "dull_color_presence", "severity": 0.45, "evidence": "muted travel color"},
+                ],
+                "crop_need": "low",
+            },
+        )
+
+        params = plan["parameters"]
+        assert plan["scores"]["hierarchy_boost_applied"] is True
+        assert params["exposure"]["contrast"] >= 11
+        assert params["exposure"]["compensation"] >= 0.3
+        assert params["luminance_curve"]["contrast"] >= 8
+        assert params["luminance_curve"]["avoid_color_shift"] is True
+        assert params["microcontrast"]["amount"] >= 8
+        assert params["vibrance"]["pastels"] >= 8
+        assert params["vibrance"]["saturated"] in range(3, 6)
+        validation = validate_autonomous_parameters(params)
+        assert validation.allowed is True
+        assert "local_contrast" not in params
+        assert "tone_curve" not in params
+        assert "rgb_curves" not in params
+        assert "hsv_equalizer" not in params
+
+    def test_predictive_hierarchy_boost_does_not_trigger_for_single_hierarchy_issue(self):
+        plan = build_predictive_edit_plan(
+            style="warm natural travel",
+            intensity="medium",
+            user_brief="tram travel frame",
+            diagnosis_payload={
+                "style": "warm natural travel",
+                "intensity": "medium",
+                "diagnosis": [{"issue": "flat_midtone_geometry", "severity": 0.8, "evidence": "flat rails"}],
+                "crop_need": "low",
+            },
+        )
+
+        assert plan["scores"]["hierarchy_boost_applied"] is False
+
+    def test_predictive_medium_dull_color_presence_uses_stronger_vibrance(self):
+        plan = build_predictive_edit_plan(
+            style="warm natural travel",
+            intensity="medium",
+            user_brief="muted color",
+            diagnosis_payload={
+                "style": "warm natural travel",
+                "intensity": "medium",
+                "diagnosis": [{"issue": "dull_color_presence", "severity": 0.45, "evidence": "muted"}],
+                "crop_need": "low",
+            },
+        )
+
+        assert plan["parameters"]["vibrance"]["pastels"] >= 8
+        assert 3 <= plan["parameters"]["vibrance"]["saturated"] <= 5
+
+    def test_predictive_high_intensity_hierarchy_boost_clamps_to_manifest(self):
+        plan = build_predictive_edit_plan(
+            style="warm natural travel",
+            intensity="high",
+            user_brief="strong hierarchy",
+            diagnosis_payload={
+                "style": "warm natural travel",
+                "intensity": "high",
+                "diagnosis": [
+                    {"issue": "flat_midtone_geometry", "severity": 1.0, "evidence": "flat"},
+                    {"issue": "weak_subject_readability", "severity": 1.0, "evidence": "weak"},
+                    {"issue": "low_thumbnail_impact", "severity": 1.0, "evidence": "small"},
+                    {"issue": "dull_color_presence", "severity": 1.0, "evidence": "muted"},
+                ],
+                "crop_need": "low",
+            },
+        )
+
+        params = plan["parameters"]
+        assert params["exposure"]["contrast"] <= 20
+        assert params["luminance_curve"]["contrast"] <= 16
+        assert params["microcontrast"]["amount"] <= 20
+        assert params["vibrance"]["pastels"] <= 15
+        assert validate_autonomous_parameters(params).allowed is True
+
+    def test_predictive_expected_effect_mentions_subject_background_separation(self):
+        plan = build_predictive_edit_plan(
+            style="warm natural travel",
+            intensity="medium",
+            user_brief="tram hierarchy",
+            diagnosis_payload={
+                "style": "warm natural travel",
+                "intensity": "medium",
+                "diagnosis": [
+                    {"issue": "flat_midtone_geometry", "severity": 0.65, "evidence": "flat rails"},
+                    {"issue": "weak_subject_readability", "severity": 0.55, "evidence": "tram competes"},
+                ],
+                "crop_need": "low",
+            },
+        )
+
+        effect_text = " ".join(plan["expected_effect"]).lower()
+        assert "subject" in effect_text
+        assert "background" in effect_text
+        assert "separate" in effect_text
 
     async def test_auto_edit_predictive_high_intensity_correction_is_clamped(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"

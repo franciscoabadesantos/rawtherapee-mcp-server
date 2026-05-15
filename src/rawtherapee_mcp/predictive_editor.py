@@ -202,7 +202,13 @@ def _bounded_numeric(control_id: str, proposed: float) -> tuple[object, dict[str
     return clamped, None
 
 
-def _suggested_value(control_id: str, severity: float, direction: float, intensity_scale: float) -> object:
+def _suggested_value(
+    control_id: str,
+    severity: float,
+    direction: float,
+    intensity_scale: float,
+    strength: float = 0.45,
+) -> object:
     entry = _manifest_entry(control_id)
     if entry is None:
         return 0
@@ -227,9 +233,9 @@ def _suggested_value(control_id: str, severity: float, direction: float, intensi
         span = upper - lower
         amplitude = max(0.1, min(1.0, severity * intensity_scale))
         if direction >= 0:
-            proposed = float(default_value) + (span * 0.45 * amplitude)
+            proposed = float(default_value) + (span * strength * amplitude)
         else:
-            proposed = float(default_value) - (span * 0.45 * amplitude)
+            proposed = float(default_value) - (span * strength * amplitude)
     else:
         proposed = float(default_value) + (10.0 * direction * severity * intensity_scale)
 
@@ -239,10 +245,54 @@ def _suggested_value(control_id: str, severity: float, direction: float, intensi
     return round(float(bounded), 3) if _is_number(bounded) else bounded
 
 
+def _hierarchy_boost_controls(
+    diagnosis: list[dict[str, Any]],
+    intensity: str,
+) -> tuple[list[tuple[str, object]], bool]:
+    hierarchy_issues = {
+        "flat_midtone_geometry",
+        "weak_subject_readability",
+        "low_thumbnail_impact",
+    }
+    severities = [
+        float(item.get("severity", 0.5))
+        for item in diagnosis
+        if str(item.get("issue", "")) in hierarchy_issues
+    ]
+    if len(severities) < 2:
+        return [], False
+
+    scale = _INTENSITY_SCALE[_normalize_intensity(intensity)]
+    boost_severity = max(severities)
+    readability_severity = max(
+        [
+            float(item.get("severity", 0.5))
+            for item in diagnosis
+            if str(item.get("issue", "")) == "weak_subject_readability"
+        ],
+        default=boost_severity,
+    )
+    return [
+        ("Exposure.Contrast", _suggested_value("Exposure.Contrast", boost_severity, 1.0, scale, strength=0.60)),
+        ("Luminance Curve.Enabled", True),
+        (
+            "Luminance Curve.Contrast",
+            _suggested_value("Luminance Curve.Contrast", boost_severity, 1.0, scale, strength=0.75),
+        ),
+        ("Luminance Curve.AvoidColorShift", True),
+        ("SharpenMicro.Enabled", True),
+        ("SharpenMicro.Amount", _suggested_value("SharpenMicro.Amount", boost_severity, 1.0, scale, strength=0.60)),
+        (
+            "Exposure.Compensation",
+            _suggested_value("Exposure.Compensation", readability_severity, 1.0, scale, strength=0.50),
+        ),
+    ], True
+
+
 def _planned_controls_from_diagnosis(
     diagnosis: list[dict[str, Any]],
     intensity: str,
-) -> tuple[list[tuple[str, object]], list[str]]:
+) -> tuple[list[tuple[str, object]], list[str], bool]:
     scale = _INTENSITY_SCALE[_normalize_intensity(intensity)]
     controls: list[tuple[str, object]] = []
     blocked_considered: list[str] = []
@@ -273,8 +323,8 @@ def _planned_controls_from_diagnosis(
             controls.extend(
                 [
                     ("Vibrance.Enabled", True),
-                    ("Vibrance.Pastels", _suggested_value("Vibrance.Pastels", severity, 1.0, scale)),
-                    ("Vibrance.Saturated", _suggested_value("Vibrance.Saturated", severity, 1.0, scale)),
+                    ("Vibrance.Pastels", _suggested_value("Vibrance.Pastels", severity, 1.0, scale, strength=0.85)),
+                    ("Vibrance.Saturated", _suggested_value("Vibrance.Saturated", severity, 1.0, scale, strength=0.50)),
                     ("Vibrance.ProtectSkins", True),
                     ("Vibrance.AvoidColorShift", True),
                     ("Exposure.Saturation", _suggested_value("Exposure.Saturation", severity, 1.0, scale)),
@@ -339,7 +389,9 @@ def _planned_controls_from_diagnosis(
                 )
             )
 
-    return controls, blocked_considered
+    boost_controls, hierarchy_boost_applied = _hierarchy_boost_controls(diagnosis, intensity)
+    controls.extend(boost_controls)
+    return controls, blocked_considered, hierarchy_boost_applied
 
 
 def _merge_control_values(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -350,7 +402,17 @@ def _merge_control_values(pairs: list[tuple[str, object]]) -> dict[str, object]:
             continue
         existing = merged[control_id]
         if _is_number(existing) and _is_number(value):
-            merged[control_id] = (float(existing) + float(value)) / 2.0
+            entry = _manifest_entry(control_id)
+            default = _default_value_from_manifest(entry) if entry is not None else 0
+            if _is_number(default):
+                existing_delta = float(existing) - float(default)
+                value_delta = float(value) - float(default)
+                if existing_delta * value_delta >= 0:
+                    merged[control_id] = existing if abs(existing_delta) >= abs(value_delta) else value
+                else:
+                    merged[control_id] = (float(existing) + float(value)) / 2.0
+            else:
+                merged[control_id] = (float(existing) + float(value)) / 2.0
         elif isinstance(existing, bool):
             merged[control_id] = existing or bool(value)
         else:
@@ -463,7 +525,9 @@ def build_predictive_edit_plan(
     if not isinstance(diagnosis_items, list):
         diagnosis_items = []
 
-    issue_controls, blocked_considered = _planned_controls_from_diagnosis(diagnosis_items, intensity)
+    issue_controls, blocked_considered, hierarchy_boost_applied = _planned_controls_from_diagnosis(
+        diagnosis_items, intensity
+    )
     merged_controls = _merge_control_values(issue_controls)
 
     # Hard block banned primitives from planner output, but report consideration.
@@ -486,12 +550,12 @@ def build_predictive_edit_plan(
     if "flat_midtone_geometry" in issue_names:
         expected_effect.extend(
             [
-                "subject readability should improve at thumbnail scale",
-                "midtone geometry should separate more clearly",
+                "primary subject should separate faster from poles/wires/background",
+                "midtone rail/street geometry should gain clearer depth",
             ]
         )
     if "dull_color_presence" in issue_names:
-        expected_effect.append("color presence should improve without phone-filter intensity")
+        expected_effect.append("color presence should increase without fake HDR or phone-filter saturation")
     if {"bright_sky_needs_control", "washed_highlights"} & issue_names:
         expected_effect.append("bright sky/highlights should stay more believable")
     if "too_cool_or_clinical" in issue_names:
@@ -594,6 +658,7 @@ def build_predictive_edit_plan(
             "naturalness_score": naturalness_score,
             "artifact_free_score": artifact_free_score,
             "crop_dependency": crop_dependency,
+            "hierarchy_boost_applied": hierarchy_boost_applied,
             "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
             "decision": gate_decision["decision"],
             "export_gate_passed": gate_decision["export_gate_passed"],
@@ -612,6 +677,7 @@ def build_predictive_edit_plan(
                 "not crop-only",
             ],
             "scoring_guidance": gate_decision["scoring_guidance"],
+            "hierarchy_boost_applied": hierarchy_boost_applied,
             "result_template": verification,
         },
     }

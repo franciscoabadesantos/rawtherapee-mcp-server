@@ -9,9 +9,9 @@ InTrash=false
 [Exposure]
 Auto=false
 Clip=0.02
-Compensation=0.322
+Compensation=0.358
 Brightness=0
-Contrast=9
+Contrast=12
 Saturation=4
 Black=0
 HighlightCompr=0
@@ -47,15 +47,16 @@ Enabled=false
 
 [Luminance Curve]
 Enabled=true
-Contrast=5
+Contrast=8
+AvoidColorShift=true
 
 [SharpenMicro]
 Enabled=true
-Amount=6
+Amount=8
 
 [Vibrance]
 Enabled=true
-Pastels=4
+Pastels=8
 Saturated=4
 ProtectSkins=true
 AvoidColorShift=true

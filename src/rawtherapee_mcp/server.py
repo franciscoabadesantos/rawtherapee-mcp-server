@@ -1345,6 +1345,7 @@ def _predictive_export_decision(validation_allowed: bool, scores: dict[str, Any]
         "naturalness_score": naturalness_score,
         "artifact_free_score": artifact_free_score,
         "crop_dependency": crop_dependency,
+        "hierarchy_boost_applied": bool(scores.get("hierarchy_boost_applied", False)),
         "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
         "decision": decision["decision"],
         "export_gate_passed": decision["export_gate_passed"],

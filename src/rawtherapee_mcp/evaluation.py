@@ -148,6 +148,7 @@ def _decision_from_scores(scores: dict[str, Any], validation: dict[str, Any]) ->
         "artifact_free_score": artifact_free,
         "artifact_check": "pass" if artifact_free >= 8.0 else "fail",
         "crop_dependency": crop_dependency,
+        "hierarchy_boost_applied": bool(scores.get("hierarchy_boost_applied", False)),
         "decision": decision,
         "export_gate_passed": export_gate_passed,
         "gate_requirements": {

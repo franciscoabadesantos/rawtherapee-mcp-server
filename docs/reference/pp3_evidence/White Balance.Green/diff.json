@@ -1,0 +1,48 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/White Balance.Green/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/White Balance.Green/control_enabled.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/White Balance.Green/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/White Balance.Green/control_low.pp3",
+    "changed": [
+      {
+        "section": "White Balance",
+        "key": "Green",
+        "before": "1.0",
+        "after": "0.98"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/White Balance.Green/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/White Balance.Green/control_medium.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/White Balance.Green/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/White Balance.Green/control_high.pp3",
+    "changed": [
+      {
+        "section": "White Balance",
+        "key": "Green",
+        "before": "1.0",
+        "after": "1.02"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  }
+}

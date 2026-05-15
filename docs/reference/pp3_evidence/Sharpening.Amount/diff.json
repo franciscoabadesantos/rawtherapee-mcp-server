@@ -1,0 +1,62 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/Sharpening.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Sharpening.Amount/control_enabled.pp3",
+    "changed": [
+      {
+        "section": "Sharpening",
+        "key": "Amount",
+        "before": "200",
+        "after": "180"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/Sharpening.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Sharpening.Amount/control_low.pp3",
+    "changed": [
+      {
+        "section": "Sharpening",
+        "key": "Amount",
+        "before": "200",
+        "after": "150"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/Sharpening.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Sharpening.Amount/control_medium.pp3",
+    "changed": [
+      {
+        "section": "Sharpening",
+        "key": "Amount",
+        "before": "200",
+        "after": "180"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/Sharpening.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Sharpening.Amount/control_high.pp3",
+    "changed": [
+      {
+        "section": "Sharpening",
+        "key": "Amount",
+        "before": "200",
+        "after": "220"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  }
+}

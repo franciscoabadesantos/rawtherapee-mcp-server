@@ -8,24 +8,1085 @@
   },
   "default_policy": {
     "autonomous_allowed": false,
-    "mode": "manual_only"
+    "mode": "manual_only",
+    "reason": "Unknown PP3 sections/keys are blocked until evidence is captured."
   },
   "controls": {
+    "Exposure.Compensation": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Compensation",
+      "ui_name": "Exposure > Exposure Compensation",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0.0,
+        "low": -0.3,
+        "medium": 0.2,
+        "high": 0.5
+      },
+      "suggested_autonomous_range": [
+        -0.5,
+        0.8
+      ],
+      "typical_step": 0.1,
+      "expected_effect": "global exposure shift",
+      "risks": [
+        "highlight clipping",
+        "flat image when over-lifted"
+      ],
+      "interactions": [
+        "Compensation and HighlightCompr should be balanced together."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/warm_portrait.pp3",
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "docs/reference/pp3_evidence/Exposure.Compensation/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Compensation/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Exposure.Contrast": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Contrast",
+      "ui_name": "Exposure > Contrast",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 10,
+        "medium": 15,
+        "high": 20
+      },
+      "suggested_autonomous_range": [
+        -10,
+        20
+      ],
+      "typical_step": 4,
+      "expected_effect": "global contrast and perceived depth",
+      "risks": [
+        "blocked shadows",
+        "harsh highlights"
+      ],
+      "interactions": [
+        "Stacks aggressively with Luminance Curve.Contrast and SharpenMicro.Amount."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/warm_portrait.pp3",
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "docs/reference/pp3_evidence/Exposure.Contrast/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Contrast/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Exposure.Saturation": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Saturation",
+      "ui_name": "Exposure > Saturation",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": -5,
+        "medium": 5,
+        "high": 10
+      },
+      "suggested_autonomous_range": [
+        -10,
+        12
+      ],
+      "typical_step": 3,
+      "expected_effect": "global saturation adjustment",
+      "risks": [
+        "oversaturated skin",
+        "muted look when pushed negative"
+      ],
+      "interactions": [
+        "Often paired with Vibrance.Pastels/Saturated for finer color control."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/warm_portrait.pp3",
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "docs/reference/pp3_evidence/Exposure.Saturation/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Saturation/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Exposure.Black": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Black",
+      "ui_name": "Exposure > Black",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": -3,
+        "medium": 0,
+        "high": 8
+      },
+      "suggested_autonomous_range": [
+        -8,
+        12
+      ],
+      "typical_step": 2,
+      "expected_effect": "black point and deep shadow anchoring",
+      "risks": [
+        "crushed shadows",
+        "muddy toe"
+      ],
+      "interactions": [
+        "Combines with Contrast and Shadows for tonal floor control."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/editing_techniques.py",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "docs/reference/pp3_evidence/Exposure.Black/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Black/notes.md"
+      ],
+      "confidence": "low"
+    },
+    "Exposure.HighlightCompr": {
+      "pp3_section": "Exposure",
+      "pp3_key": "HighlightCompr",
+      "ui_name": "Exposure > Highlight Compression",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 10,
+        "medium": 25,
+        "high": 40
+      },
+      "suggested_autonomous_range": [
+        0,
+        40
+      ],
+      "typical_step": 5,
+      "expected_effect": "compresses bright tones to protect highlights",
+      "risks": [
+        "flat highlights",
+        "gray haze in bright regions"
+      ],
+      "interactions": [
+        "Should be balanced against Exposure.Compensation to avoid dull highlights."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "tests/test_profile_hierarchy.py",
+        "docs/reference/pp3_evidence/Exposure.HighlightCompr/diff.json",
+        "docs/reference/pp3_evidence/Exposure.HighlightCompr/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Exposure.HighlightComprThreshold": {
+      "pp3_section": "Exposure",
+      "pp3_key": "HighlightComprThreshold",
+      "ui_name": "Exposure > Highlight Compression Threshold",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 15,
+        "medium": 35,
+        "high": 55
+      },
+      "suggested_autonomous_range": [
+        0,
+        60
+      ],
+      "typical_step": 5,
+      "expected_effect": "sets where highlight compression starts",
+      "risks": [
+        "banded highlight transition",
+        "unexpected midtone flattening"
+      ],
+      "interactions": [
+        "Works jointly with HighlightCompr; threshold too high can mute midtones."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/neutral.pp3",
+        "tests/fixtures/sample.pp3",
+        "docs/reference/pp3_evidence/Exposure.HighlightComprThreshold/diff.json",
+        "docs/reference/pp3_evidence/Exposure.HighlightComprThreshold/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "White Balance.Temperature": {
+      "pp3_section": "White Balance",
+      "pp3_key": "Temperature",
+      "ui_name": "White Balance > Temperature",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 5500,
+        "low": 5200,
+        "medium": 5600,
+        "high": 5800
+      },
+      "suggested_autonomous_range": [
+        5000,
+        6200
+      ],
+      "typical_step": 100,
+      "expected_effect": "global warm/cool white-balance shift",
+      "risks": [
+        "unnatural color cast",
+        "skin tone drift"
+      ],
+      "interactions": [
+        "Temperature shifts interact with Green and saturation controls."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/warm_portrait.pp3",
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "docs/reference/pp3_evidence/White Balance.Temperature/diff.json",
+        "docs/reference/pp3_evidence/White Balance.Temperature/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "White Balance.Green": {
+      "pp3_section": "White Balance",
+      "pp3_key": "Green",
+      "ui_name": "White Balance > Green",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 1.0,
+        "low": 0.98,
+        "medium": 1.0,
+        "high": 1.02
+      },
+      "suggested_autonomous_range": [
+        0.97,
+        1.03
+      ],
+      "typical_step": 0.01,
+      "expected_effect": "green/magenta tint correction",
+      "risks": [
+        "green or magenta cast"
+      ],
+      "interactions": [
+        "Use small adjustments alongside Temperature."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/neutral.pp3",
+        "tests/fixtures/sample.pp3",
+        "docs/reference/pp3_evidence/White Balance.Green/diff.json",
+        "docs/reference/pp3_evidence/White Balance.Green/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Shadows & Highlights.Highlights": {
+      "pp3_section": "Shadows & Highlights",
+      "pp3_key": "Highlights",
+      "ui_name": "Shadows/Highlights > Highlights",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": -20,
+        "medium": -10,
+        "high": 0
+      },
+      "suggested_autonomous_range": [
+        -25,
+        10
+      ],
+      "typical_step": 5,
+      "expected_effect": "local highlight lift/compression balance",
+      "risks": [
+        "haloing",
+        "flat highlight separation"
+      ],
+      "interactions": [
+        "Interacts strongly with Radius and HighlightTonalWidth."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Shadows & Highlights.Highlights/diff.json",
+        "docs/reference/pp3_evidence/Shadows & Highlights.Highlights/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Shadows & Highlights.Shadows": {
+      "pp3_section": "Shadows & Highlights",
+      "pp3_key": "Shadows",
+      "ui_name": "Shadows/Highlights > Shadows",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 5,
+        "medium": 10,
+        "high": 20
+      },
+      "suggested_autonomous_range": [
+        0,
+        25
+      ],
+      "typical_step": 5,
+      "expected_effect": "local shadow recovery",
+      "risks": [
+        "milky shadows",
+        "noise accentuation"
+      ],
+      "interactions": [
+        "Interacts with Exposure.Black and Radius."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Shadows & Highlights.Shadows/diff.json",
+        "docs/reference/pp3_evidence/Shadows & Highlights.Shadows/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Shadows & Highlights.HighlightTonalWidth": {
+      "pp3_section": "Shadows & Highlights",
+      "pp3_key": "HighlightTonalWidth",
+      "ui_name": "Shadows/Highlights > Highlight Tonal Width",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 50,
+        "low": 55,
+        "medium": 65,
+        "high": 72
+      },
+      "suggested_autonomous_range": [
+        45,
+        75
+      ],
+      "typical_step": 5,
+      "expected_effect": "defines highlight region width for local highlight adjustment",
+      "risks": [
+        "midtone spill into highlight processing"
+      ],
+      "interactions": [
+        "Changes effect footprint of Highlights and Radius."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Shadows & Highlights.HighlightTonalWidth/diff.json",
+        "docs/reference/pp3_evidence/Shadows & Highlights.HighlightTonalWidth/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Shadows & Highlights.ShadowTonalWidth": {
+      "pp3_section": "Shadows & Highlights",
+      "pp3_key": "ShadowTonalWidth",
+      "ui_name": "Shadows/Highlights > Shadow Tonal Width",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 50,
+        "low": 55,
+        "medium": 65,
+        "high": 75
+      },
+      "suggested_autonomous_range": [
+        45,
+        80
+      ],
+      "typical_step": 5,
+      "expected_effect": "defines shadow region width for local shadow adjustment",
+      "risks": [
+        "low-midtone flattening"
+      ],
+      "interactions": [
+        "Changes effect footprint of Shadows and Radius."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Shadows & Highlights.ShadowTonalWidth/diff.json",
+        "docs/reference/pp3_evidence/Shadows & Highlights.ShadowTonalWidth/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Shadows & Highlights.Radius": {
+      "pp3_section": "Shadows & Highlights",
+      "pp3_key": "Radius",
+      "ui_name": "Shadows/Highlights > Radius",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 40,
+        "low": 30,
+        "medium": 40,
+        "high": 55
+      },
+      "suggested_autonomous_range": [
+        25,
+        60
+      ],
+      "typical_step": 5,
+      "expected_effect": "local adjustment radius for shadows/highlights",
+      "risks": [
+        "halos near edges",
+        "coarse local tone transitions"
+      ],
+      "interactions": [
+        "Large radius magnifies width and highlight/shadow amount effects."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Shadows & Highlights.Radius/diff.json",
+        "docs/reference/pp3_evidence/Shadows & Highlights.Radius/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Luminance Curve.Enabled": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "Enabled",
+      "ui_name": "Exposure > L*a*b* Adjustments > Enabled",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "enables luminance/chromaticity curve module",
+      "risks": [
+        "nonlinear tone response when enabled with aggressive settings"
+      ],
+      "interactions": [
+        "Should be kept subtle when combined with Exposure.Contrast."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Luminance Curve.Enabled/diff.json",
+        "docs/reference/pp3_evidence/Luminance Curve.Enabled/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Luminance Curve.Contrast": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "Contrast",
+      "ui_name": "Exposure > L*a*b* Adjustments > Contrast",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 6,
+        "medium": 12,
+        "high": 16
+      },
+      "suggested_autonomous_range": [
+        0,
+        16
+      ],
+      "typical_step": 3,
+      "expected_effect": "luminance contrast without direct RGB channel shifts",
+      "risks": [
+        "local contrast harshness",
+        "tone crowding"
+      ],
+      "interactions": [
+        "Stacks with Exposure.Contrast and SharpenMicro.Amount."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Luminance Curve.Contrast/diff.json",
+        "docs/reference/pp3_evidence/Luminance Curve.Contrast/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Luminance Curve.AvoidColorShift": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "AvoidColorShift",
+      "ui_name": "Exposure > L*a*b* Adjustments > Avoid color shift",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "mitigates chroma drift while adjusting luminance curve",
+      "risks": [
+        "unexpected desaturation if combined with heavy curve edits"
+      ],
+      "interactions": [
+        "Relevant only when Luminance Curve.Enabled is true."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Luminance Curve.AvoidColorShift/diff.json",
+        "docs/reference/pp3_evidence/Luminance Curve.AvoidColorShift/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Luminance Curve.Chromaticity": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "Chromaticity",
+      "ui_name": "Exposure > L*a*b* Adjustments > Chromaticity",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": -5,
+        "medium": 0,
+        "high": 8
+      },
+      "suggested_autonomous_range": [
+        -8,
+        10
+      ],
+      "typical_step": 2,
+      "expected_effect": "balances chroma response in luminance-curve processing",
+      "risks": [
+        "color shift under strong tonal reshaping"
+      ],
+      "interactions": [
+        "Tune with AvoidColorShift when enabling luminance adjustments."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Luminance Curve.Chromaticity/diff.json",
+        "docs/reference/pp3_evidence/Luminance Curve.Chromaticity/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Vibrance.Enabled": {
+      "pp3_section": "Vibrance",
+      "pp3_key": "Enabled",
+      "ui_name": "Color > Vibrance > Enabled",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "enables vibrance engine",
+      "risks": [
+        "unexpected color changes if high values are applied downstream"
+      ],
+      "interactions": [
+        "Should be evaluated together with Pastels/Saturated."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "docs/reference/pp3_evidence/Vibrance.Enabled/diff.json",
+        "docs/reference/pp3_evidence/Vibrance.Enabled/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Vibrance.Pastels": {
+      "pp3_section": "Vibrance",
+      "pp3_key": "Pastels",
+      "ui_name": "Color > Vibrance > Pastels",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 5,
+        "medium": 10,
+        "high": 15
+      },
+      "suggested_autonomous_range": [
+        -5,
+        15
+      ],
+      "typical_step": 3,
+      "expected_effect": "selective saturation of low-saturation colors",
+      "risks": [
+        "pastel oversaturation",
+        "skin exaggeration"
+      ],
+      "interactions": [
+        "Pairs with ProtectSkins and Saturated for controlled color lift."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "src/rawtherapee_mcp/editing_techniques.py",
+        "docs/reference/pp3_evidence/Vibrance.Pastels/diff.json",
+        "docs/reference/pp3_evidence/Vibrance.Pastels/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Vibrance.Saturated": {
+      "pp3_section": "Vibrance",
+      "pp3_key": "Saturated",
+      "ui_name": "Color > Vibrance > Saturated",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": -4,
+        "medium": 4,
+        "high": 10
+      },
+      "suggested_autonomous_range": [
+        -8,
+        10
+      ],
+      "typical_step": 2,
+      "expected_effect": "adjusts already-saturated colors",
+      "risks": [
+        "clipped color channels",
+        "cartoon color rendering"
+      ],
+      "interactions": [
+        "Constrain when Exposure.Saturation is also positive."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/vivid_pet.pp3",
+        "src/rawtherapee_mcp/editing_techniques.py",
+        "docs/reference/pp3_evidence/Vibrance.Saturated/diff.json",
+        "docs/reference/pp3_evidence/Vibrance.Saturated/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Vibrance.ProtectSkins": {
+      "pp3_section": "Vibrance",
+      "pp3_key": "ProtectSkins",
+      "ui_name": "Color > Vibrance > Protect skin tones",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "protects skin hue range from vibrance shifts",
+      "risks": [
+        "uneven color behavior when combined with high vibrance"
+      ],
+      "interactions": [
+        "Most relevant when Pastels/Saturated are nonzero."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/pp3_generator.py",
+        "docs/reference/pp3_evidence/Vibrance.ProtectSkins/diff.json",
+        "docs/reference/pp3_evidence/Vibrance.ProtectSkins/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Vibrance.AvoidColorShift": {
+      "pp3_section": "Vibrance",
+      "pp3_key": "AvoidColorShift",
+      "ui_name": "Color > Vibrance > Avoid color shift",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "reduces hue drift from vibrance edits",
+      "risks": [
+        "lower vibrance impact than expected"
+      ],
+      "interactions": [
+        "Useful guard when pushing Pastels/Saturated."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/pp3_generator.py",
+        "docs/reference/pp3_evidence/Vibrance.AvoidColorShift/diff.json",
+        "docs/reference/pp3_evidence/Vibrance.AvoidColorShift/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "Sharpening.Amount": {
+      "pp3_section": "Sharpening",
+      "pp3_key": "Amount",
+      "ui_name": "Detail > Sharpening > Amount",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 150,
+        "low": 150,
+        "medium": 180,
+        "high": 220
+      },
+      "suggested_autonomous_range": [
+        120,
+        180
+      ],
+      "typical_step": 10,
+      "expected_effect": "global sharpening strength",
+      "risks": [
+        "edge halos",
+        "noise amplification"
+      ],
+      "interactions": [
+        "Keep lower when SharpenMicro.Amount is enabled."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/neutral.pp3",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Sharpening.Amount/diff.json",
+        "docs/reference/pp3_evidence/Sharpening.Amount/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Sharpening.Radius": {
+      "pp3_section": "Sharpening",
+      "pp3_key": "Radius",
+      "ui_name": "Detail > Sharpening > Radius",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0.5,
+        "low": 0.5,
+        "medium": 0.6,
+        "high": 0.8
+      },
+      "suggested_autonomous_range": [
+        0.4,
+        1.0
+      ],
+      "typical_step": 0.1,
+      "expected_effect": "controls sharpening edge neighborhood size",
+      "risks": [
+        "haloing at large radius",
+        "coarse texture artifacts"
+      ],
+      "interactions": [
+        "Higher radius with high Amount can look crunchy."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/neutral.pp3",
+        "src/rawtherapee_mcp/templates/moody_cinematic.pp3",
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Sharpening.Radius/diff.json",
+        "docs/reference/pp3_evidence/Sharpening.Radius/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Sharpening.Threshold": {
+      "pp3_section": "Sharpening",
+      "pp3_key": "Threshold",
+      "ui_name": "Detail > Sharpening > Threshold",
+      "autonomous_allowed": "approved_values_only",
+      "approved_values": [
+        "20;80;2000;1200;"
+      ],
+      "manual_allowed": true,
+      "value_type": "pp3_curve_string",
+      "observed_ui_values": {
+        "default": "20;80;2000;1200;"
+      },
+      "expected_effect": "edge thresholding behavior for sharpening",
+      "risks": [
+        "unpredictable edge behavior with arbitrary threshold strings"
+      ],
+      "interactions": [
+        "Threshold should be changed only with dedicated evidence fixtures."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/templates/neutral.pp3",
+        "tests/fixtures/sample.pp3",
+        "docs/reference/pp3_evidence/Sharpening.Threshold/diff.json",
+        "docs/reference/pp3_evidence/Sharpening.Threshold/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "SharpenMicro.Enabled": {
+      "pp3_section": "SharpenMicro",
+      "pp3_key": "Enabled",
+      "ui_name": "Detail > Microcontrast > Enabled",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "enables microcontrast sharpening stage",
+      "risks": [
+        "structure harshness",
+        "noise accentuation"
+      ],
+      "interactions": [
+        "Keep conservative when Exposure.Contrast is positive."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "src/rawtherapee_mcp/editing_techniques.py",
+        "docs/reference/pp3_evidence/SharpenMicro.Enabled/diff.json",
+        "docs/reference/pp3_evidence/SharpenMicro.Enabled/notes.md"
+      ],
+      "confidence": "low",
+      "pending_evidence": true
+    },
+    "SharpenMicro.Amount": {
+      "pp3_section": "SharpenMicro",
+      "pp3_key": "Amount",
+      "ui_name": "Detail > Microcontrast > Amount",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "number",
+      "observed_ui_values": {
+        "default": 0,
+        "low": 8,
+        "medium": 15,
+        "high": 20
+      },
+      "suggested_autonomous_range": [
+        0,
+        20
+      ],
+      "typical_step": 3,
+      "expected_effect": "fine texture and local microcontrast boost",
+      "risks": [
+        "gritty texture",
+        "micro-halo artifacts"
+      ],
+      "interactions": [
+        "Avoid high stacking with Exposure.Contrast and Sharpening.Amount."
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "src/rawtherapee_mcp/editing_techniques.py",
+        "docs/reference/pp3_evidence/SharpenMicro.Amount/diff.json",
+        "docs/reference/pp3_evidence/SharpenMicro.Amount/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Crop.Enabled": {
+      "pp3_section": "Crop",
+      "pp3_key": "Enabled",
+      "ui_name": "Transform > Crop > Enabled",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "activates crop window",
+      "risks": [
+        "unintended framing cut",
+        "subject truncation"
+      ],
+      "interactions": [
+        "Resize must be disabled for reliable crop behavior (RT 5.12 caveat)."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/server.py",
+        "tests/test_server.py",
+        "docs/reference/pp3_evidence/Crop.Enabled/diff.json",
+        "docs/reference/pp3_evidence/Crop.Enabled/notes.md"
+      ],
+      "confidence": "high"
+    },
+    "Crop.X": {
+      "pp3_section": "Crop",
+      "pp3_key": "X",
+      "ui_name": "Transform > Crop > X",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "integer",
+      "suggested_autonomous_range": [
+        0,
+        null
+      ],
+      "expected_effect": "horizontal crop offset",
+      "risks": [
+        "off-center crop",
+        "subject loss"
+      ],
+      "interactions": [
+        "Must be validated against source dimensions."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/server.py",
+        "docs/reference/pp3_evidence/Crop.X/diff.json",
+        "docs/reference/pp3_evidence/Crop.X/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Crop.Y": {
+      "pp3_section": "Crop",
+      "pp3_key": "Y",
+      "ui_name": "Transform > Crop > Y",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "integer",
+      "suggested_autonomous_range": [
+        0,
+        null
+      ],
+      "expected_effect": "vertical crop offset",
+      "risks": [
+        "off-center crop",
+        "subject loss"
+      ],
+      "interactions": [
+        "Must be validated against source dimensions."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/server.py",
+        "docs/reference/pp3_evidence/Crop.Y/diff.json",
+        "docs/reference/pp3_evidence/Crop.Y/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Crop.W": {
+      "pp3_section": "Crop",
+      "pp3_key": "W",
+      "ui_name": "Transform > Crop > Width",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "integer",
+      "suggested_autonomous_range": [
+        1,
+        null
+      ],
+      "expected_effect": "crop width",
+      "risks": [
+        "over-tight crop",
+        "invalid crop window"
+      ],
+      "interactions": [
+        "Width and Height must stay within source bounds."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/server.py",
+        "tests/test_server.py",
+        "docs/reference/pp3_evidence/Crop.W/diff.json",
+        "docs/reference/pp3_evidence/Crop.W/notes.md"
+      ],
+      "confidence": "high"
+    },
+    "Crop.H": {
+      "pp3_section": "Crop",
+      "pp3_key": "H",
+      "ui_name": "Transform > Crop > Height",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "integer",
+      "suggested_autonomous_range": [
+        1,
+        null
+      ],
+      "expected_effect": "crop height",
+      "risks": [
+        "over-tight crop",
+        "invalid crop window"
+      ],
+      "interactions": [
+        "Width and Height must stay within source bounds."
+      ],
+      "evidence": [
+        "src/rawtherapee_mcp/server.py",
+        "tests/test_server.py",
+        "docs/reference/pp3_evidence/Crop.H/diff.json",
+        "docs/reference/pp3_evidence/Crop.H/notes.md"
+      ],
+      "confidence": "high"
+    },
+    "Crop.FixedRatio": {
+      "pp3_section": "Crop",
+      "pp3_key": "FixedRatio",
+      "ui_name": "Transform > Crop > Fixed Ratio",
+      "autonomous_allowed": true,
+      "manual_allowed": true,
+      "value_type": "boolean",
+      "observed_ui_values": {
+        "default": false,
+        "enabled": true
+      },
+      "expected_effect": "locks crop aspect ratio",
+      "risks": [
+        "forced framing mismatch"
+      ],
+      "interactions": [
+        "Use with approved Crop.Ratio values."
+      ],
+      "evidence": [
+        "tests/test_server.py",
+        "docs/reference/pp3_evidence/Crop.FixedRatio/diff.json",
+        "docs/reference/pp3_evidence/Crop.FixedRatio/notes.md"
+      ],
+      "confidence": "high"
+    },
+    "Crop.Ratio": {
+      "pp3_section": "Crop",
+      "pp3_key": "Ratio",
+      "ui_name": "Transform > Crop > Ratio",
+      "autonomous_allowed": "approved_values_only",
+      "approved_values": [
+        "3:2",
+        "4:5"
+      ],
+      "manual_allowed": true,
+      "value_type": "ratio_string",
+      "observed_ui_values": {
+        "default": "3:2",
+        "alternate": "4:5"
+      },
+      "expected_effect": "sets crop aspect ratio",
+      "risks": [
+        "invalid aspect string",
+        "unexpected framing"
+      ],
+      "interactions": [
+        "Should be changed with FixedRatio=true and valid crop dimensions."
+      ],
+      "evidence": [
+        "tests/fixtures/sample.pp3",
+        "tests/test_server.py",
+        "docs/reference/pp3_evidence/Crop.Ratio/diff.json",
+        "docs/reference/pp3_evidence/Crop.Ratio/notes.md"
+      ],
+      "confidence": "high"
+    },
     "Local Contrast.Amount": {
       "pp3_section": "Local Contrast",
       "pp3_key": "Amount",
       "ui_name": "Details > Local Contrast > Amount",
       "autonomous_allowed": false,
       "manual_allowed": true,
+      "value_type": "number",
       "expected_effect": "local contrast/detail enhancement",
       "risks": [
         "harsh/crunchy render",
         "posterized local contrast artifacts"
       ],
       "evidence": [
-        "autonomous sanitizer removes local_contrast due to artifact risk",
-        "historical render ladders showed artifact-prone behavior"
-      ]
+        "src/rawtherapee_mcp/pp3_generator.py",
+        "tests/test_pp3_generator.py"
+      ],
+      "confidence": "high"
     },
     "HSV Equalizer.HCurve": {
       "pp3_section": "HSV Equalizer",
@@ -33,6 +1094,7 @@
       "ui_name": "Color > HSV Equalizer > Hue curve",
       "autonomous_allowed": false,
       "manual_allowed": true,
+      "value_type": "pp3_curve_string",
       "expected_effect": "hue remapping",
       "risks": [
         "broad color drift",
@@ -40,66 +1102,66 @@
         "unintended global hue remap"
       ],
       "evidence": [
-        "prior debug notes for HSV hue remapping instability in autonomous usage"
-      ]
+        "src/rawtherapee_mcp/pp3_generator.py",
+        "tests/test_control_policy.py"
+      ],
+      "confidence": "high"
     },
     "HSV Equalizer.SCurve": {
       "pp3_section": "HSV Equalizer",
       "pp3_key": "SCurve",
       "ui_name": "Color > HSV Equalizer > Saturation curve",
-      "autonomous_allowed": "approved_curve_only",
+      "autonomous_allowed": "approved_values_only",
       "approved_values": [
         "0;"
       ],
       "manual_allowed": true,
+      "value_type": "pp3_curve_string",
       "expected_effect": "hue-targeted saturation shaping",
       "risks": [
         "oversaturation",
         "muted hues if curve shape is too aggressive"
       ],
       "evidence": [
-        "existing tests and technique mappings use PP3 curve serialization for SCurve",
-        "requires explicit approved curve evidence before widening"
-      ]
+        "tests/test_pp3_generator.py",
+        "tests/test_control_policy.py"
+      ],
+      "confidence": "medium"
     },
-    "Exposure.Compensation": {
-      "pp3_section": "Exposure",
-      "pp3_key": "Compensation",
-      "ui_name": "Exposure > Exposure Compensation",
+    "ColorToning.Enabled": {
+      "pp3_section": "ColorToning",
+      "pp3_key": "Enabled",
+      "ui_name": "Color Toning > Enabled",
       "autonomous_allowed": false,
       "manual_allowed": true,
-      "pending_evidence": true,
-      "expected_effect": "global exposure shift",
-      "risks": [],
+      "value_type": "boolean",
+      "expected_effect": "enables split/color toning",
+      "risks": [
+        "strong color cast",
+        "non-natural split-tone look"
+      ],
       "evidence": [
-        "pending_ui_diff_capture"
-      ]
+        "src/rawtherapee_mcp/pp3_generator.py",
+        "tests/test_pp3_generator.py"
+      ],
+      "confidence": "high"
     },
-    "Vibrance.Pastels": {
-      "pp3_section": "Vibrance",
-      "pp3_key": "Pastels",
-      "ui_name": "Color > Vibrance > Pastels",
+    "Locallab.Enabled": {
+      "pp3_section": "Locallab",
+      "pp3_key": "Enabled",
+      "ui_name": "Locallab > Enabled",
       "autonomous_allowed": false,
       "manual_allowed": true,
-      "pending_evidence": true,
-      "expected_effect": "pastel saturation bias",
-      "risks": [],
+      "value_type": "boolean",
+      "expected_effect": "enables local-mask editing",
+      "risks": [
+        "aggressive local artifacts",
+        "mask errors"
+      ],
       "evidence": [
-        "pending_ui_diff_capture"
-      ]
-    },
-    "Luminance Curve.LCurve": {
-      "pp3_section": "Luminance Curve",
-      "pp3_key": "LCurve",
-      "ui_name": "Exposure > L*a*b* Adjustments > L curve",
-      "autonomous_allowed": false,
-      "manual_allowed": true,
-      "pending_evidence": true,
-      "expected_effect": "luminance curve shaping",
-      "risks": [],
-      "evidence": [
-        "pending_ui_diff_capture"
-      ]
+        "src/rawtherapee_mcp/pp3_generator.py"
+      ],
+      "confidence": "high"
     }
   }
 }

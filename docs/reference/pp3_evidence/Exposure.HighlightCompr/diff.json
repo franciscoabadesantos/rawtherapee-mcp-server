@@ -1,0 +1,62 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/control_enabled.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "HighlightCompr",
+        "before": "0",
+        "after": "25"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/control_low.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "HighlightCompr",
+        "before": "0",
+        "after": "10"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/control_medium.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "HighlightCompr",
+        "before": "0",
+        "after": "25"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.HighlightCompr/control_high.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "HighlightCompr",
+        "before": "0",
+        "after": "40"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  }
+}

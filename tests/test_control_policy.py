@@ -10,6 +10,12 @@ from rawtherapee_mcp.control_policy import (
 
 
 class TestControlPolicy:
+    def test_allowed_core_control_passes_within_manifest_range(self) -> None:
+        assert is_control_allowed_autonomous("Exposure", "Contrast", 10)
+
+    def test_allowed_core_control_fails_outside_manifest_range(self) -> None:
+        assert not is_control_allowed_autonomous("Exposure", "Contrast", 80)
+
     def test_local_contrast_amount_is_blocked_for_autonomous(self) -> None:
         assert not is_control_allowed_autonomous("Local Contrast", "Amount", 0.1)
 
@@ -35,6 +41,12 @@ class TestControlPolicy:
         blocked_ids = {item.control_id for item in result.blocked_controls}
         assert "Local Contrast.Amount" in blocked_ids
         assert "HSV Equalizer.HCurve" in blocked_ids
+
+    def test_validate_autonomous_parameters_blocks_out_of_range_values(self) -> None:
+        result = validate_autonomous_parameters({"exposure": {"contrast": 80}})
+        assert not result.allowed
+        assert any(item.control_id == "Exposure.Contrast" for item in result.blocked_controls)
+        assert any("outside suggested autonomous range" in item.reason for item in result.blocked_controls)
 
     def test_validate_autonomous_parameters_blocks_unknown_groups(self) -> None:
         result = validate_autonomous_parameters({"future_magic_control": {"value": 1}})

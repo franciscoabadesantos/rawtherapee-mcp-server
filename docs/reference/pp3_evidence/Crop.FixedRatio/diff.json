@@ -1,0 +1,70 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/Crop.FixedRatio/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.FixedRatio/control_enabled.pp3",
+    "changed": [
+      {
+        "section": "Crop",
+        "key": "FixedRatio",
+        "before": "false",
+        "after": "true"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": [
+      {
+        "section": "Crop",
+        "reason": "full-image crop normalization"
+      }
+    ]
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/Crop.FixedRatio/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.FixedRatio/control_low.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/Crop.FixedRatio/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.FixedRatio/control_medium.pp3",
+    "changed": [
+      {
+        "section": "Crop",
+        "key": "FixedRatio",
+        "before": "false",
+        "after": "true"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": [
+      {
+        "section": "Crop",
+        "reason": "full-image crop normalization"
+      }
+    ]
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/Crop.FixedRatio/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.FixedRatio/control_high.pp3",
+    "changed": [
+      {
+        "section": "Crop",
+        "key": "FixedRatio",
+        "before": "false",
+        "after": "true"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": [
+      {
+        "section": "Crop",
+        "reason": "full-image crop normalization"
+      }
+    ]
+  }
+}

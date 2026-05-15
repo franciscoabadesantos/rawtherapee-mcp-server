@@ -1,0 +1,34 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/Crop.X/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.X/control_enabled.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/Crop.X/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.X/control_low.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/Crop.X/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.X/control_medium.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/Crop.X/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Crop.X/control_high.pp3",
+    "changed": [],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  }
+}

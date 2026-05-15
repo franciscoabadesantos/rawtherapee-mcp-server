@@ -1,0 +1,58 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/Local Contrast.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Local Contrast.Amount/control_enabled.pp3",
+    "changed": [],
+    "added": [
+      {
+        "section": "Local Contrast",
+        "key": "Amount",
+        "after": "0"
+      }
+    ],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/Local Contrast.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Local Contrast.Amount/control_low.pp3",
+    "changed": [],
+    "added": [
+      {
+        "section": "Local Contrast",
+        "key": "Amount",
+        "after": "0"
+      }
+    ],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/Local Contrast.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Local Contrast.Amount/control_medium.pp3",
+    "changed": [],
+    "added": [
+      {
+        "section": "Local Contrast",
+        "key": "Amount",
+        "after": "0"
+      }
+    ],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/Local Contrast.Amount/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Local Contrast.Amount/control_high.pp3",
+    "changed": [],
+    "added": [
+      {
+        "section": "Local Contrast",
+        "key": "Amount",
+        "after": "0"
+      }
+    ],
+    "removed": [],
+    "possible_noise": []
+  }
+}

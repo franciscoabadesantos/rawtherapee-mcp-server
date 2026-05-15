@@ -58,7 +58,7 @@ def _serialize_pp3_like(value: object) -> str:
 
 
 @lru_cache(maxsize=1)
-def _load_manifest() -> dict[str, Any]:
+def load_manifest() -> dict[str, Any]:
     manifest_path = files("rawtherapee_mcp").joinpath("control_manifest.json")
     with manifest_path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -68,12 +68,80 @@ def _load_manifest() -> dict[str, Any]:
 
 
 def _get_control_entry(section: str, key: str) -> dict[str, Any] | None:
-    manifest = _load_manifest()
+    manifest = load_manifest()
     controls = manifest.get("controls", {})
     if not isinstance(controls, dict):
         return None
     entry = controls.get(_control_id(section, key))
     return entry if isinstance(entry, dict) else None
+
+
+def _coerce_numeric(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _is_expected_boolean(value: object) -> bool:
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        return value.lower() in {"true", "false"}
+    return False
+
+
+def _is_expected_integer(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return value.is_integer()
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return False
+        return parsed.is_integer()
+    return False
+
+
+def _value_within_range(entry: dict[str, Any], value: object) -> bool:
+    suggested_range = entry.get("suggested_autonomous_range")
+    if not isinstance(suggested_range, list) or len(suggested_range) != 2:
+        return True
+
+    numeric_value = _coerce_numeric(value)
+    if numeric_value is None:
+        return False
+
+    minimum_raw = suggested_range[0]
+    maximum_raw = suggested_range[1]
+    minimum = _coerce_numeric(minimum_raw)
+    maximum = _coerce_numeric(maximum_raw)
+    if minimum is not None and numeric_value < minimum:
+        return False
+    if maximum is not None and numeric_value > maximum:
+        return False
+    return True
+
+
+def _is_expected_value_type(entry: dict[str, Any], value: object) -> bool:
+    value_type = entry.get("value_type")
+    if value_type == "boolean":
+        return _is_expected_boolean(value)
+    if value_type == "integer":
+        return _is_expected_integer(value)
+    if value_type == "number":
+        return _coerce_numeric(value) is not None
+    return True
 
 
 def get_control_risk(section: str, key: str) -> list[str]:
@@ -94,11 +162,13 @@ def is_control_allowed_autonomous(section: str, key: str, value: object | None =
         return False
 
     policy = entry.get("autonomous_allowed")
+    if value is not None and not _is_expected_value_type(entry, value):
+        return False
     if policy is True:
-        return True
+        return value is None or _value_within_range(entry, value)
     if policy is False:
         return False
-    if policy == "approved_curve_only":
+    if policy in {"approved_curve_only", "approved_values_only"}:
         approved_values = entry.get("approved_values", [])
         if not isinstance(approved_values, list):
             return False
@@ -162,8 +232,12 @@ def validate_autonomous_parameters(parameters: dict[str, Any]) -> ValidationResu
                     reason = "Not in manifest: manual-only by default"
                 else:
                     policy = entry.get("autonomous_allowed")
-                    if policy == "approved_curve_only":
+                    if not _is_expected_value_type(entry, value):
+                        reason = f"Invalid value type for control (expected {entry.get('value_type')})"
+                    elif policy in {"approved_curve_only", "approved_values_only"}:
                         reason = "Value is not in approved curve list"
+                    elif policy is True and not _value_within_range(entry, value):
+                        reason = "Value is outside suggested autonomous range"
                     else:
                         reason = "Control is blocked for autonomous editing"
                 blocked_controls.append(
@@ -182,3 +256,44 @@ def validate_autonomous_parameters(parameters: dict[str, Any]) -> ValidationResu
         checked_controls=checked_controls,
         warnings=warnings,
     )
+
+
+def build_manifest_report() -> dict[str, Any]:
+    """Build an audit-friendly summary of manifest readiness."""
+    manifest = load_manifest()
+    controls = manifest.get("controls", {})
+    if not isinstance(controls, dict):
+        controls = {}
+
+    allowed: list[str] = []
+    blocked: list[str] = []
+    pending_evidence: list[str] = []
+    approved_values: dict[str, list[str]] = {}
+
+    for control_id in sorted(controls):
+        entry = controls.get(control_id)
+        if not isinstance(entry, dict):
+            continue
+
+        policy = entry.get("autonomous_allowed")
+        if policy is True:
+            allowed.append(control_id)
+        else:
+            blocked.append(control_id)
+
+        if entry.get("pending_evidence") is True:
+            pending_evidence.append(control_id)
+
+        values = entry.get("approved_values")
+        if isinstance(values, list) and values:
+            normalized = [value for value in values if isinstance(value, str)]
+            approved_values[control_id] = normalized
+
+    return {
+        "rawtherapee_versions": manifest.get("rawtherapee_versions", {}),
+        "unknown_default_policy": manifest.get("default_policy", {}),
+        "allowed_autonomous_controls": allowed,
+        "blocked_controls": blocked,
+        "pending_evidence_controls": pending_evidence,
+        "approved_curve_values": approved_values,
+    }

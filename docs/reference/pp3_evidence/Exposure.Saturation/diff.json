@@ -1,0 +1,62 @@
+{
+  "control_enabled": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.Saturation/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.Saturation/control_enabled.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "Saturation",
+        "before": "0",
+        "after": "5"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_low": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.Saturation/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.Saturation/control_low.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "Saturation",
+        "before": "0",
+        "after": "-5"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_medium": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.Saturation/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.Saturation/control_medium.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "Saturation",
+        "before": "0",
+        "after": "5"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  },
+  "control_high": {
+    "before_path": "docs/reference/pp3_evidence/Exposure.Saturation/base_settled.pp3",
+    "after_path": "docs/reference/pp3_evidence/Exposure.Saturation/control_high.pp3",
+    "changed": [
+      {
+        "section": "Exposure",
+        "key": "Saturation",
+        "before": "0",
+        "after": "10"
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "possible_noise": []
+  }
+}

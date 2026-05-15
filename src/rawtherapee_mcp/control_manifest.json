@@ -1,0 +1,105 @@
+{
+  "rawtherapee_versions": {
+    "captured_local_cli": "5.10",
+    "pending_validation": [
+      "5.11",
+      "5.12"
+    ]
+  },
+  "default_policy": {
+    "autonomous_allowed": false,
+    "mode": "manual_only"
+  },
+  "controls": {
+    "Local Contrast.Amount": {
+      "pp3_section": "Local Contrast",
+      "pp3_key": "Amount",
+      "ui_name": "Details > Local Contrast > Amount",
+      "autonomous_allowed": false,
+      "manual_allowed": true,
+      "expected_effect": "local contrast/detail enhancement",
+      "risks": [
+        "harsh/crunchy render",
+        "posterized local contrast artifacts"
+      ],
+      "evidence": [
+        "autonomous sanitizer removes local_contrast due to artifact risk",
+        "historical render ladders showed artifact-prone behavior"
+      ]
+    },
+    "HSV Equalizer.HCurve": {
+      "pp3_section": "HSV Equalizer",
+      "pp3_key": "HCurve",
+      "ui_name": "Color > HSV Equalizer > Hue curve",
+      "autonomous_allowed": false,
+      "manual_allowed": true,
+      "expected_effect": "hue remapping",
+      "risks": [
+        "broad color drift",
+        "cyan/warm split",
+        "unintended global hue remap"
+      ],
+      "evidence": [
+        "prior debug notes for HSV hue remapping instability in autonomous usage"
+      ]
+    },
+    "HSV Equalizer.SCurve": {
+      "pp3_section": "HSV Equalizer",
+      "pp3_key": "SCurve",
+      "ui_name": "Color > HSV Equalizer > Saturation curve",
+      "autonomous_allowed": "approved_curve_only",
+      "approved_values": [
+        "0;"
+      ],
+      "manual_allowed": true,
+      "expected_effect": "hue-targeted saturation shaping",
+      "risks": [
+        "oversaturation",
+        "muted hues if curve shape is too aggressive"
+      ],
+      "evidence": [
+        "existing tests and technique mappings use PP3 curve serialization for SCurve",
+        "requires explicit approved curve evidence before widening"
+      ]
+    },
+    "Exposure.Compensation": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Compensation",
+      "ui_name": "Exposure > Exposure Compensation",
+      "autonomous_allowed": false,
+      "manual_allowed": true,
+      "pending_evidence": true,
+      "expected_effect": "global exposure shift",
+      "risks": [],
+      "evidence": [
+        "pending_ui_diff_capture"
+      ]
+    },
+    "Vibrance.Pastels": {
+      "pp3_section": "Vibrance",
+      "pp3_key": "Pastels",
+      "ui_name": "Color > Vibrance > Pastels",
+      "autonomous_allowed": false,
+      "manual_allowed": true,
+      "pending_evidence": true,
+      "expected_effect": "pastel saturation bias",
+      "risks": [],
+      "evidence": [
+        "pending_ui_diff_capture"
+      ]
+    },
+    "Luminance Curve.LCurve": {
+      "pp3_section": "Luminance Curve",
+      "pp3_key": "LCurve",
+      "ui_name": "Exposure > L*a*b* Adjustments > L curve",
+      "autonomous_allowed": false,
+      "manual_allowed": true,
+      "pending_evidence": true,
+      "expected_effect": "luminance curve shaping",
+      "risks": [],
+      "evidence": [
+        "pending_ui_diff_capture"
+      ]
+    }
+  }
+}

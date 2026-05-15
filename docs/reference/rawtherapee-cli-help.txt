@@ -1,0 +1,2 @@
+RawTherapee, version 5.10, command line.
+exit_code=2

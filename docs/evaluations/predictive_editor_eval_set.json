@@ -1,0 +1,92 @@
+[
+  {
+    "raw_path": "/home/franciscosantos/Pictures/rawtherapee-output/IMG_1279.jpg",
+    "brief": "warm natural travel edit; improve subject separation and color presence without fake HDR",
+    "intensity": "medium",
+    "expected_main_subject": "tram",
+    "avoid": [
+      "crop-only",
+      "local contrast crunch",
+      "cyan split",
+      "fake HDR"
+    ],
+    "notes": "Phase 3 regression case from Barcelona tram session. Replace with source CR3 path when available."
+  },
+  {
+    "raw_path": "/path/to/travel_street_geometry.CR3",
+    "brief": "clean travel street edit with stronger geometry hierarchy and natural color",
+    "intensity": "medium",
+    "expected_main_subject": "street scene",
+    "avoid": [
+      "crop-only",
+      "fake HDR",
+      "cyan split"
+    ]
+  },
+  {
+    "raw_path": "/path/to/portrait_skin.CR3",
+    "brief": "natural portrait polish; improve subject readability while preserving believable skin",
+    "intensity": "medium",
+    "expected_main_subject": "person",
+    "avoid": [
+      "orange skin",
+      "crunchy detail",
+      "over-saturation"
+    ]
+  },
+  {
+    "raw_path": "/path/to/landscape_sky.CR3",
+    "brief": "landscape cleanup with controlled sky highlights and natural tonal depth",
+    "intensity": "medium",
+    "expected_main_subject": "landscape",
+    "avoid": [
+      "fake HDR",
+      "gray haze",
+      "over-sharpening"
+    ]
+  },
+  {
+    "raw_path": "/path/to/low_light_high_iso.CR3",
+    "brief": "low-light natural recovery with readable subject and restrained noise emphasis",
+    "intensity": "low",
+    "expected_main_subject": "night subject",
+    "avoid": [
+      "crunchy noise",
+      "over-bright shadows",
+      "plastic smoothing"
+    ]
+  },
+  {
+    "raw_path": "/path/to/flat_daylight.CR3",
+    "brief": "flat daylight enhancement with subtle depth and natural color presence",
+    "intensity": "medium",
+    "expected_main_subject": "daylight scene",
+    "avoid": [
+      "over-contrast",
+      "fake filter look",
+      "crop-only"
+    ]
+  },
+  {
+    "raw_path": "/path/to/mixed_lighting.CR3",
+    "brief": "mixed-lighting correction to improve neutrality and local readability",
+    "intensity": "medium",
+    "expected_main_subject": "mixed-light scene",
+    "avoid": [
+      "color cast swings",
+      "cyan split",
+      "orange shift"
+    ]
+  },
+  {
+    "raw_path": "/path/to/green_foliage.CR3",
+    "brief": "green foliage natural enhancement without oversaturation or hue shift",
+    "intensity": "medium",
+    "expected_main_subject": "foliage",
+    "avoid": [
+      "neon greens",
+      "yellow/green cast",
+      "fake HDR"
+    ]
+  }
+]

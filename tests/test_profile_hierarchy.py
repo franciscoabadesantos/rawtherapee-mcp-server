@@ -181,7 +181,7 @@ def test_list_templates_does_not_expose_generated_variants(custom_dir: Path, par
     ctx.lifespan_context = {"config": config}
 
     create_variant(custom_dir, parent_pp3, "generated_v", overrides={})
-    result = asyncio.get_event_loop().run_until_complete(list_templates(ctx))
+    result = asyncio.run(list_templates(ctx))
 
     custom_names = [t["name"] for t in result["custom"]]
     assert "generated_v" not in custom_names

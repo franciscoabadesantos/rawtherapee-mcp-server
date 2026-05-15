@@ -61,7 +61,7 @@ def test_list_luts_groups_by_subdir(lut_dir: Path) -> None:
 
     import asyncio
 
-    result = asyncio.get_event_loop().run_until_complete(list_luts(ctx, directory=str(lut_dir)))
+    result = asyncio.run(list_luts(ctx, directory=str(lut_dir)))
 
     assert result["total"] == 4
     assert "Fuji" in result["categories"]
@@ -92,7 +92,7 @@ def test_list_luts_category_filter(lut_dir: Path) -> None:
 
     import asyncio
 
-    result = asyncio.get_event_loop().run_until_complete(list_luts(ctx, directory=str(lut_dir), category="Fuji"))
+    result = asyncio.run(list_luts(ctx, directory=str(lut_dir), category="Fuji"))
 
     assert result["total"] == 2
     assert list(result["categories"].keys()) == ["Fuji"]
@@ -103,7 +103,7 @@ def test_list_luts_no_dir_returns_error(mock_ctx: MagicMock) -> None:
 
     from rawtherapee_mcp.server import list_luts
 
-    result = asyncio.get_event_loop().run_until_complete(list_luts(mock_ctx))
+    result = asyncio.run(list_luts(mock_ctx))
     assert "error" in result
 
 
@@ -117,7 +117,7 @@ def test_apply_lut_writes_film_simulation(neutral_pp3: Path, mock_ctx: MagicMock
 
     from rawtherapee_mcp.server import apply_lut
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         apply_lut(mock_ctx, profile_path=str(neutral_pp3), lut_name="Fuji/Fuji Velvia 50.png", strength=80)
     )
     assert "error" not in result
@@ -134,7 +134,7 @@ def test_apply_lut_invalid_strength_returns_error(neutral_pp3: Path, mock_ctx: M
 
     from rawtherapee_mcp.server import apply_lut
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         apply_lut(mock_ctx, profile_path=str(neutral_pp3), lut_name="test.png", strength=150)
     )
     assert "error" in result
@@ -152,7 +152,7 @@ def test_preview_lut_comparison_too_few_luts(mock_ctx: MagicMock, tmp_path: Path
 
     raw = tmp_path / "photo.cr2"
     raw.write_bytes(b"FAKE")
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         preview_lut_comparison(mock_ctx, file_path=str(raw), lut_names=["one.png"])
     )
     assert isinstance(result, dict)
@@ -167,7 +167,7 @@ def test_preview_lut_comparison_too_many_luts(mock_ctx: MagicMock, tmp_path: Pat
     raw = tmp_path / "photo.cr2"
     raw.write_bytes(b"FAKE")
     luts = ["a.png", "b.png", "c.png", "d.png", "e.png", "f.png"]
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         preview_lut_comparison(mock_ctx, file_path=str(raw), lut_names=luts)
     )
     assert isinstance(result, dict)
@@ -179,7 +179,7 @@ def test_preview_lut_comparison_missing_raw(mock_ctx: MagicMock) -> None:
 
     from rawtherapee_mcp.server import preview_lut_comparison
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         preview_lut_comparison(mock_ctx, file_path="/nonexistent/photo.cr2", lut_names=["a.png", "b.png"])
     )
     assert isinstance(result, dict)

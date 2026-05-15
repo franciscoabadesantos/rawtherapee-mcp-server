@@ -61,6 +61,26 @@ _CONTROL_TO_FRIENDLY: dict[str, tuple[str, str]] = {
     "Crop.Ratio": ("crop", "ratio"),
 }
 
+_INTEGER_NUMERIC_CONTROLS = {
+    "Exposure.Contrast",
+    "Exposure.Saturation",
+    "Exposure.Black",
+    "Exposure.HighlightCompr",
+    "Exposure.HighlightComprThreshold",
+    "White Balance.Temperature",
+    "Shadows & Highlights.Highlights",
+    "Shadows & Highlights.Shadows",
+    "Shadows & Highlights.HighlightTonalWidth",
+    "Shadows & Highlights.ShadowTonalWidth",
+    "Shadows & Highlights.Radius",
+    "Luminance Curve.Contrast",
+    "Luminance Curve.Chromaticity",
+    "Vibrance.Pastels",
+    "Vibrance.Saturated",
+    "Sharpening.Amount",
+    "SharpenMicro.Amount",
+}
+
 
 def _normalize_intensity(intensity: str) -> str:
     return intensity if intensity in _INTENSITY_SCALE else "medium"
@@ -363,7 +383,9 @@ def _friendly_parameters_from_controls(
         if isinstance(group, dict):
             if _is_number(value) and _manifest_entry(control_id) is not None:
                 entry = _manifest_entry(control_id)
-                if entry is not None and entry.get("value_type") == "integer":
+                if control_id in _INTEGER_NUMERIC_CONTROLS:
+                    group[param_key] = int(round(float(value)))
+                elif entry is not None and entry.get("value_type") == "integer":
                     group[param_key] = int(round(float(value)))
                 else:
                     group[param_key] = round(float(value), 3)

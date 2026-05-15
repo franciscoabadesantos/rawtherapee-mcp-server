@@ -496,7 +496,9 @@ class TestPredictiveEvaluation:
 
         markdown = Path(report["files"]["report_md"]).read_text(encoding="utf-8")
         assert "## Planner Expected" in markdown
-        assert "## Visual Verification Observed" in markdown
+        assert "## Visual Verification Observations" in markdown
+        assert "## Consistency Checks" in markdown
+        assert "## Final Decision" in markdown
         assert "- Decision source: visual_verification" in markdown
         assert "Non-crop edit quality: fail" in markdown
         assert "Reason:" in markdown
@@ -657,6 +659,92 @@ class TestPredictiveEvaluation:
 
         human_scores = report["manual_score_comparison"]["human_scores"]
         assert human_scores["perceived_non_crop_improvement"] == "weak"
+
+    def test_reports_include_verification_observations_and_consistency_checks_in_two_step_flow(
+        self, tmp_path: Path
+    ) -> None:
+        raw_file = tmp_path / "IMG_1279.jpg"
+        _write_jpeg(raw_file, color="white")
+        source_base = tmp_path / "source_base.jpg"
+        source_pred = tmp_path / "source_pred.jpg"
+        source_compare = tmp_path / "source_compare.jpg"
+        source_profile = tmp_path / "source_profile.pp3"
+        _write_jpeg(source_base, color="blue")
+        _write_jpeg(source_pred, color="green")
+        _write_jpeg(source_compare, color="gray")
+        source_profile.write_text("[Version]\nAppVersion=5.11\n", encoding="utf-8")
+
+        async def fake_preview_raw(*args, **kwargs):
+            return {"success": True, "preview_path": str(source_base)}
+
+        async def fake_prepare(*args, **kwargs):
+            return {
+                "status": "verification_required",
+                "decision": "verification_required",
+                "profile_path": str(source_profile),
+                "base_preview_path": str(source_base),
+                "edited_preview_path": str(source_pred),
+                "before_after_path": str(source_compare),
+                "diagnosis": {"diagnosis": []},
+                "parameters": {"exposure": {"contrast": 10}},
+                "expected_effects": ["subject separation"],
+                "planned_scores": {"expected_global_change": 8.0},
+                "validation": {"allowed": True, "blocked": [], "clamped": []},
+                "blocked_controls_considered": [],
+                "approved_curves_used": [],
+            }
+
+        async def fake_verify(*args, **kwargs):
+            return {
+                "decision_source": "verify_predictive_edit",
+                "decision": "proof_plus",
+                "before_after_path": str(source_compare),
+                "verification_observations": {
+                    "subject_change_description": "Subject separates better.",
+                    "midtone_change_description": "Midtones improved.",
+                    "highlight_shadow_description": "Highlights controlled.",
+                    "color_change_description": "Color richer.",
+                    "artifact_description": "No halo.",
+                    "crop_dependency_description": "Mostly tonal.",
+                },
+                "consistency_checks": {"warnings": [], "score_adjustments": []},
+                "visual_verification_scores": {
+                    "global_visible_difference_score": 7.2,
+                    "global_pixel_difference": 7.2,
+                    "subject_hierarchy_score": 7.1,
+                    "thumbnail_subject_read_score": 7.0,
+                    "color_quality_score": 7.1,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                    "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 7.1,
+                    "subject_separation_improvement": 7.1,
+                    "color_intent_improvement": 7.1,
+                    "highlight_shadow_quality": 7.0,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "non_crop_edit_quality": "pass",
+                    "non_crop_edit_quality_reason": "Meaningful non-crop improvement.",
+                },
+            }
+
+        with (
+            patch("rawtherapee_mcp.evaluation.preview_raw", side_effect=fake_preview_raw),
+            patch("rawtherapee_mcp.evaluation.auto_edit_predictive", side_effect=fake_prepare),
+            patch("rawtherapee_mcp.evaluation.verify_predictive_edit", side_effect=fake_verify),
+        ):
+            report = asyncio.run(
+                run_predictive_evaluation(
+                    raw_path=str(raw_file),
+                    brief="warm natural travel",
+                    intensity="medium",
+                    output_root=tmp_path / "eval-two-step",
+                )
+            )
+        assert report["decision_source"] == "verify_predictive_edit"
+        assert "subject_change_description" in report["verification_observations"]
+        assert "warnings" in report["consistency_checks"]
 
     def test_cli_script_exits_cleanly_with_mocked_runner(self, monkeypatch) -> None:
         module = _load_cli_module()

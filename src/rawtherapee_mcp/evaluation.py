@@ -15,7 +15,12 @@ from PIL import Image as PILImage
 from rawtherapee_mcp.config import RTConfig, load_config
 from rawtherapee_mcp.control_policy import find_approved_curve
 from rawtherapee_mcp.predictive_editor import score_predictive_export_decision
-from rawtherapee_mcp.server import auto_edit_predictive, preview_before_after, preview_raw
+from rawtherapee_mcp.server import (
+    auto_edit_predictive_prepare as auto_edit_predictive,
+    preview_before_after,
+    preview_raw,
+    verify_predictive_edit,
+)
 
 RAW_SUFFIXES = {
     ".cr2",
@@ -79,24 +84,6 @@ def _copy_existing(src: str | None, dst: Path) -> str | None:
         return None
     dst.write_bytes(path.read_bytes())
     return str(dst)
-
-
-def _build_before_after(before_path: str | None, after_path: str | None, out_path: Path) -> str | None:
-    if not before_path or not after_path:
-        return None
-    before = Path(before_path)
-    after = Path(after_path)
-    if not before.is_file() or not after.is_file():
-        return None
-
-    with PILImage.open(before) as before_img, PILImage.open(after) as after_img:
-        height = max(before_img.height, after_img.height)
-        width = before_img.width + after_img.width
-        canvas = PILImage.new("RGB", (width, height), color="black")
-        canvas.paste(before_img.convert("RGB"), (0, 0))
-        canvas.paste(after_img.convert("RGB"), (before_img.width, 0))
-        canvas.save(out_path, "JPEG")
-    return str(out_path)
 
 
 def _contains_banned_controls(parameters: dict[str, Any]) -> dict[str, bool]:
@@ -201,9 +188,34 @@ def _decision_from_scores(scores: dict[str, Any], validation: dict[str, Any]) ->
     }
 
 
-def _human_score_to_visual_verification(human_scores: dict[str, Any] | None) -> dict[str, Any] | None:
+def _human_score_to_verification_observations(human_scores: dict[str, Any] | None) -> dict[str, Any]:
+    fallback = {
+        "subject_change_description": "No human observations provided.",
+        "background_change_description": "No human observations provided.",
+        "midtone_change_description": "No human observations provided.",
+        "highlight_shadow_description": "No human observations provided.",
+        "color_change_description": "No human observations provided.",
+        "artifact_description": "No human observations provided.",
+        "crop_dependency_description": "No human observations provided.",
+        "scores": {
+            "global_pixel_difference": 0.0,
+            "non_crop_tonal_improvement": 0.0,
+            "subject_separation_improvement": 0.0,
+            "color_intent_improvement": 0.0,
+            "highlight_shadow_quality": 0.0,
+            "composition_improvement": 0.0,
+            "crop_contribution": 0.0,
+            "perceived_non_crop_improvement": "none",
+            "artifact_check": "pass",
+            "artifact_free_score": 9.0,
+            "naturalness_score": 8.0,
+            "subject_hierarchy_score": 0.0,
+            "thumbnail_subject_read_score": 0.0,
+            "color_quality_score": 0.0,
+        },
+    }
     if human_scores is None:
-        return None
+        return fallback
 
     def _num(key: str, default: float) -> float:
         value = human_scores.get(key, default)
@@ -215,9 +227,16 @@ def _human_score_to_visual_verification(human_scores: dict[str, Any] | None) -> 
         8.0 if crop_dependency == "primary" else (2.0 if crop_dependency == "none" else 5.0),
     )
     subject_separation = _num("subject_separation_improvement", _num("hierarchy_improvement", 0.0))
+    notes = str(human_scores.get("notes", "Human visual verification row."))
     return {
-        "subject": "primary subject",
-        "before_after_judgment": {
+        "subject_change_description": notes,
+        "background_change_description": notes,
+        "midtone_change_description": notes,
+        "highlight_shadow_description": notes,
+        "color_change_description": notes,
+        "artifact_description": notes,
+        "crop_dependency_description": notes,
+        "scores": {
             "global_pixel_difference": _num("global_pixel_difference", _num("visible_difference", 0.0)),
             "non_crop_tonal_improvement": _num(
                 "non_crop_tonal_improvement",
@@ -238,7 +257,6 @@ def _human_score_to_visual_verification(human_scores: dict[str, Any] | None) -> 
             "subject_hierarchy_score": subject_separation,
             "thumbnail_subject_read_score": _num("thumbnail_subject_read_score", subject_separation),
             "color_quality_score": _num("color_quality", 0.0),
-            "reason": str(human_scores.get("notes", "Human visual verification row.")),
         },
     }
 
@@ -354,14 +372,26 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
     lines.append(json.dumps(report.get("validation", {}), indent=2))
     lines.append("```")
     lines.append("")
-    lines.append("## Visual Verification Observed")
+    lines.append("## Visual Verification Observations")
+    lines.append("```json")
+    lines.append(json.dumps(report.get("verification_observations", {}), indent=2))
+    lines.append("```")
+    lines.append("")
+    lines.append("## Visual Verification Scores")
     lines.append("```json")
     lines.append(json.dumps(report.get("visual_verification_scores", {}), indent=2))
     lines.append("```")
-    lines.append(f"- Decision source: {report.get('decision_source', 'visual_verification_pending')}")
+    lines.append("")
+    lines.append("## Consistency Checks")
+    lines.append("```json")
+    lines.append(json.dumps(report.get("consistency_checks", {}), indent=2))
+    lines.append("```")
+    lines.append("")
+    lines.append("## Final Decision")
+    lines.append(f"- Decision source: {report.get('decision_source', 'verify_predictive_edit')}")
+    lines.append(f"- Decision: {report.get('decision', 'proof_only')}")
     non_crop_quality = report.get("visual_verification_scores", {})
     if isinstance(non_crop_quality, dict):
-        lines.append("")
         lines.append(
             f"Non-crop edit quality: {non_crop_quality.get('non_crop_edit_quality', 'fail')}"
         )
@@ -379,7 +409,7 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
         lines.append(json.dumps(comparison, indent=2))
         lines.append("```")
     lines.append("")
-    lines.append("## Preview Files")
+    lines.append("## Rendered Preview Files")
     files = report.get("files", {})
     if isinstance(files, dict):
         for key in ("base_preview", "predictive_preview", "before_after", "profile"):
@@ -416,41 +446,67 @@ async def run_predictive_evaluation(
     run_dir = resolved_output_root / source.stem
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    base_preview_result = await preview_raw(
+    base_preview_fallback: str | None = None
+    base_preview_probe = await preview_raw(
         ctx, str(source), profile_path=None, max_width=preview_width, return_image=False
     )
-    base_payload = _structured_payload(base_preview_result)
-    if "error" in base_payload:
-        return {"error": "Failed to generate base preview", "details": base_payload}
-
-    base_preview_out = run_dir / "base_preview.jpg"
-    base_preview_path = _copy_existing(base_payload.get("preview_path"), base_preview_out)
+    base_probe_payload = _structured_payload(base_preview_probe)
+    if isinstance(base_probe_payload, dict) and "error" not in base_probe_payload:
+        base_preview_fallback = cast(str | None, base_probe_payload.get("preview_path"))
 
     human_scores = _load_human_score(source, brief, intensity)
-    visual_verification_feedback = _human_score_to_visual_verification(human_scores)
+    verification_observations = _human_score_to_verification_observations(human_scores)
 
-    predictive_result = await auto_edit_predictive(
+    prepare_result = await auto_edit_predictive(
         ctx,
         raw_path=str(source),
         style=style or brief,
         intensity=intensity,
         user_brief=brief,
-        export=export,
         preview_width=preview_width,
-        verification_feedback=visual_verification_feedback,
     )
-    if "error" in predictive_result:
-        return {"error": "auto_edit_predictive failed", "details": predictive_result}
+    prepare_payload = _structured_payload(prepare_result)
+    if "error" in prepare_payload:
+        return {"error": "auto_edit_predictive failed", "details": prepare_payload}
+
+    # Backward-compatible eval behavior for legacy one-call mocks/fixtures.
+    if prepare_payload.get("decision") == "verification_required":
+        verify_result = await verify_predictive_edit(
+            ctx,
+            raw_path=str(source),
+            profile_path=str(prepare_payload.get("profile_path", "")),
+            base_preview_path=str(prepare_payload.get("base_preview_path", "")),
+            edited_preview_path=str(prepare_payload.get("edited_preview_path", "")),
+            verification_observations=verification_observations,
+            export=export,
+            before_after_path=cast(str | None, prepare_payload.get("before_after_path")),
+            preview_width=preview_width,
+        )
+        predictive_result = _structured_payload(verify_result)
+        if "error" in predictive_result:
+            return {"error": "verify_predictive_edit failed", "details": predictive_result}
+    else:
+        predictive_result = prepare_payload
+        if "base_preview_path" not in prepare_payload:
+            prepare_payload["base_preview_path"] = prepare_payload.get("base_preview") or base_preview_fallback
+        if "edited_preview_path" not in prepare_payload:
+            prepare_payload["edited_preview_path"] = prepare_payload.get("preview_path")
 
     profile_out = run_dir / "predictive_profile.pp3"
-    profile_path = _copy_existing(predictive_result.get("profile_path"), profile_out)
+    profile_path = _copy_existing(prepare_payload.get("profile_path"), profile_out)
+
+    base_preview_out = run_dir / "base_preview.jpg"
+    base_preview_path = _copy_existing(prepare_payload.get("base_preview_path"), base_preview_out)
 
     predictive_preview_out = run_dir / "predictive_preview.jpg"
-    predictive_preview_path = _copy_existing(predictive_result.get("preview_path"), predictive_preview_out)
+    predictive_preview_path = _copy_existing(prepare_payload.get("edited_preview_path"), predictive_preview_out)
 
-    before_after_result = {}
-    before_after_out_path: str | None = None
-    if profile_path:
+    before_after_out = run_dir / "before_after.jpg"
+    before_after_out_path = _copy_existing(
+        predictive_result.get("before_after_path") or prepare_payload.get("before_after_path"),
+        before_after_out,
+    )
+    if before_after_out_path is None and profile_path:
         before_after_result = _structured_payload(
             await preview_before_after(ctx, str(source), profile_path, max_width=preview_width)
         )
@@ -460,18 +516,33 @@ async def run_predictive_evaluation(
             before_path = before_after_result["before"].get("preview_path")
         if isinstance(before_after_result.get("after"), dict):
             after_path = before_after_result["after"].get("preview_path")
-        before_after_out_path = _build_before_after(before_path, after_path, run_dir / "before_after.jpg")
+        if before_path:
+            _copy_existing(before_path, run_dir / "before_side.jpg")
+        if after_path:
+            _copy_existing(after_path, run_dir / "after_side.jpg")
+        if before_path and after_path:
+            before = Path(before_path)
+            after = Path(after_path)
+            if before.is_file() and after.is_file():
+                with PILImage.open(before) as before_img, PILImage.open(after) as after_img:
+                    height = max(before_img.height, after_img.height)
+                    width = before_img.width + after_img.width
+                    canvas = PILImage.new("RGB", (width, height), color="black")
+                    canvas.paste(before_img.convert("RGB"), (0, 0))
+                    canvas.paste(after_img.convert("RGB"), (before_img.width, 0))
+                    canvas.save(before_after_out, "JPEG")
+                before_after_out_path = str(before_after_out)
 
-    parameters = predictive_result.get("parameters", {})
+    parameters = prepare_payload.get("parameters", {})
     if not isinstance(parameters, dict):
         parameters = {}
-    planned_scores = predictive_result.get("planned_scores", {})
+    planned_scores = prepare_payload.get("planned_scores", {})
     if not isinstance(planned_scores, dict):
         planned_scores = {}
     scores = predictive_result.get("visual_verification_scores", predictive_result.get("scores", {}))
     if not isinstance(scores, dict):
         scores = {}
-    validation = predictive_result.get("validation", {})
+    validation = prepare_payload.get("validation", {})
     if not isinstance(validation, dict):
         validation = {}
 
@@ -482,7 +553,7 @@ async def run_predictive_evaluation(
     export_gate = _decision_from_scores(scores, validation)
     export_gate["export_requested"] = export
     export_gate["runtime_decision"] = predictive_result.get("decision")
-    export_gate["decision_source"] = predictive_result.get("decision_source", "visual_verification_pending")
+    export_gate["decision_source"] = predictive_result.get("decision_source", "verify_predictive_edit")
     manual_score_comparison = _manual_score_comparison(
         source=source,
         brief=brief,
@@ -499,15 +570,18 @@ async def run_predictive_evaluation(
         "brief": brief,
         "intensity": intensity,
         "style": style or brief,
-        "diagnosis": predictive_result.get("diagnosis", {}).get("diagnosis", []),
+        "diagnosis": prepare_payload.get("diagnosis", {}).get("diagnosis", []),
         "parameters": parameters,
-        "expected_effect": predictive_result.get("expected_effect", []),
+        "expected_effect": prepare_payload.get("expected_effects", prepare_payload.get("expected_effect", [])),
         "planned_scores": planned_scores,
         "visual_verification_scores": scores,
-        "decision_source": predictive_result.get("decision_source", "visual_verification_pending"),
-        "approved_curves_used": predictive_result.get("approved_curves_used", []),
+        "verification_observations": predictive_result.get("verification_observations", {}),
+        "consistency_checks": predictive_result.get("consistency_checks", {}),
+        "decision_source": predictive_result.get("decision_source", "verify_predictive_edit"),
+        "decision": predictive_result.get("decision", "proof_only"),
+        "approved_curves_used": prepare_payload.get("approved_curves_used", []),
         "validation": validation,
-        "blocked_controls_considered": predictive_result.get("blocked_controls_considered", []),
+        "blocked_controls_considered": prepare_payload.get("blocked_controls_considered", []),
         "export_gate": export_gate,
         "manual_score_comparison": manual_score_comparison,
         "failure_mode_checks": banned_checks,

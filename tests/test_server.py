@@ -19,6 +19,7 @@ from rawtherapee_mcp.server import (
     analyze_image,
     apply_local_preset,
     auto_edit_predictive,
+    auto_edit_predictive_prepare,
     batch_analyze,
     batch_preview,
     check_rt_status,
@@ -48,6 +49,7 @@ from rawtherapee_mcp.server import (
     process_raw,
     read_exif,
     remove_local_adjustment,
+    verify_predictive_edit,
     visual_moves_to_parameters,
 )
 
@@ -382,10 +384,10 @@ class TestEditorialWorkflowTools:
             )
 
         assert "error" not in result
-        assert result["decision"] in {"proof_only", "failed_edit_quality"}
-        assert result["decision_source"] == "visual_verification_pending"
+        assert result["decision"] == "verification_required"
+        assert result["decision_source"] == "auto_edit_predictive_prepare"
         assert result["validation"]["allowed"] is True
-        assert "perceived_non_crop_improvement" in result["visual_verification_scores"]
+        assert "verification_packet" in result
         assert "expected_global_change" in result["planned_scores"]
         assert "local_contrast" not in result["parameters"]
         assert result["parameters"]["tone_curve"]["curve_mode"] == "Standard"
@@ -672,7 +674,7 @@ class TestEditorialWorkflowTools:
         assert "background" in effect_text
         assert "separate" in effect_text
 
-    async def test_auto_edit_predictive_high_intensity_correction_is_clamped(self, mock_ctx, tmp_path):
+    async def test_auto_edit_predictive_ignores_same_call_verification_feedback(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
         raw_file.write_bytes(b"raw")
 
@@ -682,24 +684,23 @@ class TestEditorialWorkflowTools:
             return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
 
         with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
-            result = await auto_edit_predictive(
-                mock_ctx,
-                str(raw_file),
-                intensity="high",
+                result = await auto_edit_predictive(
+                    mock_ctx,
+                    str(raw_file),
+                    intensity="high",
                 diagnosis_override={
                     "style": "warm natural travel",
                     "intensity": "high",
                     "diagnosis": [{"issue": "flat_midtone_geometry", "severity": 1.0, "evidence": "very flat"}],
                     "crop_need": "low",
-                },
-                verification_feedback={
-                    "recommendation": "minor_correction",
-                    "suggested_correction": {"Exposure.Contrast": "+100"},
-                },
-            )
+                    },
+                    verification_feedback={
+                        "before_after_judgment": {"subject_separation_improvement": 9.0},
+                    },
+                )
 
-        assert result["correction_applied"] is True
-        assert result["parameters"]["exposure"]["contrast"] <= 20
+        assert result["decision"] == "verification_required"
+        assert result["ignored_verification_feedback"] is True
 
     async def test_auto_edit_predictive_does_not_call_legacy_flow(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -720,8 +721,8 @@ class TestEditorialWorkflowTools:
             result = await auto_edit_predictive(mock_ctx, str(raw_file), export=False)
 
         assert "error" not in result
-        assert result["decision"] in {"proof_only", "failed_edit_quality"}
-        assert result["decision_source"] == "visual_verification_pending"
+        assert result["decision"] == "verification_required"
+        assert result["decision_source"] == "auto_edit_predictive_prepare"
 
     async def test_auto_edit_predictive_export_gate_rejects_weak_or_crop_primary(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -745,8 +746,8 @@ class TestEditorialWorkflowTools:
                 },
             )
 
-        assert result["decision"] == "proof_only"
-        assert result["visual_verification_scores"]["export_gate_passed"] is False
+        assert result["decision"] == "verification_required"
+        assert result["export_blocked_until_verification"] is True
 
     async def test_auto_edit_predictive_reports_approved_curve_usage(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -839,10 +840,10 @@ class TestEditorialWorkflowTools:
             )
 
         assert result["planned_scores"]["expected_subject_hierarchy"] >= 6.0
-        assert result["decision"] in {"proof_only", "failed_edit_quality"}
-        assert result["decision_source"] == "visual_verification_pending"
+        assert result["decision"] == "verification_required"
+        assert result["decision_source"] == "auto_edit_predictive_prepare"
 
-    async def test_visual_verification_scores_drive_final_decision(self, mock_ctx, tmp_path):
+    async def test_auto_edit_predictive_wrapper_does_not_allow_final_decision_from_feedback(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
         raw_file.write_bytes(b"raw")
 
@@ -875,11 +876,11 @@ class TestEditorialWorkflowTools:
                 },
             )
 
-        assert result["decision"] in {"proof_plus", "export"}
-        assert result["decision_source"] == "visual_verification"
-        assert result["visual_verification_scores"]["subject_separation_improvement"] == 7.6
+        assert result["decision"] == "verification_required"
+        assert result["ignored_verification_feedback"] is True
+        assert result["decision_source"] == "auto_edit_predictive_prepare"
 
-    async def test_perceived_non_crop_improvement_weak_blocks_proof_plus_and_export(self, mock_ctx, tmp_path):
+    async def test_auto_edit_predictive_wrapper_keeps_prepare_state_for_weak_feedback(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
         raw_file.write_bytes(b"raw")
 
@@ -912,8 +913,218 @@ class TestEditorialWorkflowTools:
                 },
             )
 
-        assert result["decision"] == "proof_only"
-        assert result["decision_source"] == "visual_verification"
+        assert result["decision"] == "verification_required"
+        assert result["ignored_verification_feedback"] is True
+
+    async def test_auto_edit_predictive_prepare_returns_tool_result_with_inline_images(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive_prepare(mock_ctx, str(raw_file), preview_width=800)
+
+        assert isinstance(result, ToolResult)
+        payload = result.structured_content
+        assert payload is not None
+        assert payload["status"] == "verification_required"
+        assert payload["decision"] == "verification_required"
+        assert payload["base_preview_path"]
+        assert payload["edited_preview_path"]
+        assert len(result.content) >= 3
+        assert result.content[1].type == "image"
+        assert result.content[2].type == "image"
+
+    async def test_auto_edit_predictive_prepare_rejects_final_verification_scores(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        result = await auto_edit_predictive_prepare(
+            mock_ctx,
+            str(raw_file),
+            verification_feedback={"before_after_judgment": {"subject_separation_improvement": 8.0}},
+        )
+        assert isinstance(result, dict)
+        assert result["error"] == "verification_feedback_not_allowed_in_prepare"
+
+    async def test_verify_predictive_edit_requires_descriptive_observations(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+        payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=payload["profile_path"],
+            base_preview_path=payload["base_preview_path"],
+            edited_preview_path=payload["edited_preview_path"],
+            verification_observations={"scores": {"subject_separation_improvement": 7.0}},
+            export=False,
+        )
+        assert isinstance(result, dict)
+        assert result["error"] == "verification_observations_required"
+
+    async def test_verify_predictive_edit_returns_inline_images_and_final_decision(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        verification_observations = {
+            "subject_change_description": "Subject pops more clearly from the background.",
+            "background_change_description": "Background stays natural and slightly calmer.",
+            "midtone_change_description": "Midtones have better depth and readability.",
+            "highlight_shadow_description": "Highlights are controlled; shadows open slightly.",
+            "color_change_description": "Color is richer without clipping.",
+            "artifact_description": "No visible halos or banding.",
+            "crop_dependency_description": "Most gain is tonal and not crop-driven.",
+            "scores": {
+                "global_pixel_difference": 7.6,
+                "subject_separation_improvement": 7.6,
+                "non_crop_tonal_improvement": 7.4,
+                "color_intent_improvement": 7.2,
+                "highlight_shadow_quality": 7.1,
+                "composition_improvement": 4.0,
+                "crop_contribution": 2.0,
+                "perceived_non_crop_improvement": "moderate",
+                "artifact_check": "pass",
+                "naturalness_score": 8.0,
+                "artifact_free_score": 9.0,
+            },
+        }
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            before_after_path=prepare_payload.get("before_after_path"),
+            verification_observations=verification_observations,
+            export=False,
+        )
+        assert isinstance(result, ToolResult)
+        payload = result.structured_content
+        assert payload is not None
+        assert payload["decision_source"] == "verify_predictive_edit"
+        assert payload["decision"] in {"proof_plus", "export"}
+        assert payload["verification_observations"]["subject_change_description"]
+        assert len(result.content) >= 3
+        assert result.content[1].type == "image"
+        assert result.content[2].type == "image"
+
+    async def test_verify_predictive_edit_emits_consistency_warnings(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            verification_observations={
+                "subject_change_description": "Subject is clearer.",
+                "background_change_description": "Background has halos and looks harsh.",
+                "midtone_change_description": "Midtones feel crunchy.",
+                "highlight_shadow_description": "Highlights feel clipped.",
+                "color_change_description": "Slight cyan cast appears.",
+                "artifact_description": "Visible halo and fake HDR feeling.",
+                "crop_dependency_description": "Mostly tonal changes.",
+                "scores": {
+                    "subject_separation_improvement": 8.0,
+                    "non_crop_tonal_improvement": 8.0,
+                    "color_intent_improvement": 8.0,
+                    "highlight_shadow_quality": 8.5,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "artifact_check": "pass",
+                    "naturalness_score": 8.4,
+                    "artifact_free_score": 9.0,
+                },
+            },
+            export=False,
+        )
+        payload = result.structured_content if isinstance(result, ToolResult) else result
+        warnings = payload["consistency_checks"]["warnings"]
+        assert warnings
+        assert any(item["field"] in {"artifact_free_score", "artifact_check"} for item in warnings)
+
+    async def test_verify_predictive_edit_blocks_proof_plus_when_perceived_non_crop_is_weak(
+        self, mock_ctx, tmp_path
+    ):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            verification_observations={
+                "subject_change_description": "Subject improves a bit.",
+                "background_change_description": "Background similar.",
+                "midtone_change_description": "Midtones improve.",
+                "highlight_shadow_description": "Highlights improve.",
+                "color_change_description": "Color improves.",
+                "artifact_description": "No artifacts.",
+                "crop_dependency_description": "Change still feels weak before crop.",
+                "scores": {
+                    "subject_separation_improvement": 7.8,
+                    "non_crop_tonal_improvement": 7.6,
+                    "color_intent_improvement": 7.4,
+                    "highlight_shadow_quality": 7.2,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "weak",
+                    "artifact_check": "pass",
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                },
+            },
+            export=False,
+        )
+        payload = result.structured_content if isinstance(result, ToolResult) else result
+        assert payload["decision"] == "proof_only"
+        assert payload["export_gate_passed"] is False
 
     async def test_generate_crop_candidates_returns_safe_crop_only_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

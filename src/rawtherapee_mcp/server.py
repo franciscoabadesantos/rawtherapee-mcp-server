@@ -20,6 +20,7 @@ from fastmcp.server.lifespan import lifespan
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.types import Image as MCPImage
 from mcp.types import ImageContent, TextContent
+from PIL import Image as PILImage
 
 from rawtherapee_mcp import __version__
 from rawtherapee_mcp.advanced_color import merge_parameter_sets
@@ -78,9 +79,7 @@ from rawtherapee_mcp.pp3_generator import (
 from rawtherapee_mcp.pp3_generator import generate_profile as _generate_profile
 from rawtherapee_mcp.pp3_parser import PP3Profile
 from rawtherapee_mcp.predictive_editor import (
-    apply_one_step_correction,
     build_predictive_edit_plan,
-    normalize_visual_verification_feedback,
     score_predictive_export_decision,
 )
 from rawtherapee_mcp.profile_hierarchy import create_variant as _create_variant
@@ -1384,24 +1383,252 @@ def _predictive_export_decision(validation_allowed: bool, scores: dict[str, Any]
     }
 
 
-@mcp.tool()
-async def auto_edit_predictive(
-    ctx: Context,
-    raw_path: str,
-    style: str = "warm natural travel",
-    intensity: str = "medium",
-    user_brief: str | None = None,
-    export: bool = False,
-    preview_width: int = 1024,
-    diagnosis_override: dict[str, Any] | None = None,
-    verification_feedback: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Default autonomous editor using manifest-backed predictive planning.
+_VERIFY_DESCRIPTION_FIELDS = (
+    "subject_change_description",
+    "midtone_change_description",
+    "highlight_shadow_description",
+    "color_change_description",
+    "artifact_description",
+    "crop_dependency_description",
+)
 
-    Contract:
-    visual diagnosis -> manifest-backed control selection -> bounded PP3 delta ->
-    preview verification contract -> optional one-step correction -> export gate.
-    """
+_VERIFY_SCORE_FIELDS = (
+    "subject_separation_improvement",
+    "non_crop_tonal_improvement",
+    "color_intent_improvement",
+    "highlight_shadow_quality",
+    "composition_improvement",
+    "crop_contribution",
+    "perceived_non_crop_improvement",
+    "artifact_check",
+    "naturalness_score",
+    "artifact_free_score",
+)
+
+_NEGATIVE_ARTIFACT_TERMS = (
+    "harsh",
+    "crunchy",
+    "halo",
+    "halos",
+    "posterized",
+    "unnatural",
+    "oversharpened",
+    "muddy",
+    "blown",
+    "clipped",
+    "noisy",
+    "grainy",
+    "cyan split",
+    "orange split",
+    "fake hdr",
+    "color cast",
+    "green cast",
+    "cyan cast",
+    "flat",
+    "washed",
+    "milky",
+    "lifted blacks",
+    "crushed",
+    "banding",
+)
+
+
+def _verification_packet(subject: str) -> dict[str, Any]:
+    return {
+        "subject": subject,
+        "questions": [
+            "Describe what changed around the main subject.",
+            "Describe whether the subject separates more clearly from the background.",
+            "Describe what changed in midtones.",
+            "Describe what changed in highlights/shadows.",
+            "Describe what changed in color.",
+            "Describe any artifacts or unnatural effects.",
+            "Is the visible improvement mostly crop/framing or tonal/color/detail?",
+        ],
+        "required_descriptions": list(_VERIFY_DESCRIPTION_FIELDS),
+        "score_fields_required": list(_VERIFY_SCORE_FIELDS),
+    }
+
+
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return default
+    return default
+
+
+def _build_before_after_preview(
+    *,
+    base_preview_path: str | None,
+    edited_preview_path: str | None,
+    output_path: Path,
+) -> str | None:
+    if not base_preview_path or not edited_preview_path:
+        return None
+    before = Path(base_preview_path)
+    after = Path(edited_preview_path)
+    if not before.is_file() or not after.is_file():
+        return None
+    with PILImage.open(before) as before_img, PILImage.open(after) as after_img:
+        height = max(before_img.height, after_img.height)
+        width = before_img.width + after_img.width
+        canvas = PILImage.new("RGB", (width, height), color="black")
+        canvas.paste(before_img.convert("RGB"), (0, 0))
+        canvas.paste(after_img.convert("RGB"), (before_img.width, 0))
+        canvas.save(output_path, "JPEG")
+    return str(output_path)
+
+
+async def _tool_result_with_preview_images(
+    payload: dict[str, Any],
+    *,
+    max_width: int,
+    image_paths: list[str | None],
+) -> dict[str, Any] | ToolResult:
+    content: list[Any] = [TextContent(type="text", text=json.dumps(payload, indent=2))]
+    for path in image_paths:
+        if not path:
+            continue
+        file_path = Path(path)
+        if not file_path.is_file():
+            continue
+        try:
+            content.append(await _preview_to_image_content(str(file_path), max_width))
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to attach inline preview image: %s", file_path, exc_info=True)
+    if len(content) == 1:
+        return payload
+    return ToolResult(content=content, structured_content=payload)
+
+
+def _normalize_verification_observed_scores(
+    raw_scores: dict[str, Any],
+    *,
+    crop_dependency: str,
+) -> dict[str, Any]:
+    perceived = str(raw_scores.get("perceived_non_crop_improvement", "none")).strip().lower()
+    if perceived not in {"none", "weak", "moderate", "strong"}:
+        perceived = "none"
+    artifact_check = str(raw_scores.get("artifact_check", "pass")).strip().lower()
+    if artifact_check not in {"pass", "fail"}:
+        artifact_check = "pass"
+    return {
+        "global_pixel_difference": _coerce_float(raw_scores.get("global_pixel_difference"), 0.0),
+        "non_crop_tonal_improvement": _coerce_float(raw_scores.get("non_crop_tonal_improvement"), 0.0),
+        "subject_separation_improvement": _coerce_float(raw_scores.get("subject_separation_improvement"), 0.0),
+        "color_intent_improvement": _coerce_float(raw_scores.get("color_intent_improvement"), 0.0),
+        "highlight_shadow_quality": _coerce_float(raw_scores.get("highlight_shadow_quality"), 0.0),
+        "composition_improvement": _coerce_float(raw_scores.get("composition_improvement"), 0.0),
+        "crop_contribution": _coerce_float(raw_scores.get("crop_contribution"), 0.0),
+        "perceived_non_crop_improvement": perceived,
+        "artifact_check": artifact_check,
+        "artifact_free_score": _coerce_float(
+            raw_scores.get("artifact_free_score"),
+            9.0 if artifact_check == "pass" else 0.0,
+        ),
+        "naturalness_score": _coerce_float(
+            raw_scores.get("naturalness_score"),
+            8.0 if artifact_check == "pass" else 0.0,
+        ),
+        "subject_hierarchy_score": _coerce_float(
+            raw_scores.get("subject_hierarchy_score", raw_scores.get("subject_separation_improvement")),
+            _coerce_float(raw_scores.get("subject_separation_improvement"), 0.0),
+        ),
+        "thumbnail_subject_read_score": _coerce_float(
+            raw_scores.get("thumbnail_subject_read_score", raw_scores.get("subject_separation_improvement")),
+            _coerce_float(raw_scores.get("subject_separation_improvement"), 0.0),
+        ),
+        "color_quality_score": _coerce_float(
+            raw_scores.get("color_quality_score", raw_scores.get("color_intent_improvement")),
+            _coerce_float(raw_scores.get("color_intent_improvement"), 0.0),
+        ),
+        "crop_dependency": crop_dependency,
+    }
+
+
+def _verify_required_descriptions(verification_observations: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    for field in _VERIFY_DESCRIPTION_FIELDS:
+        value = verification_observations.get(field)
+        if not isinstance(value, str) or not value.strip():
+            missing.append(field)
+    return missing
+
+
+def _consistency_checks(
+    verification_observations: dict[str, Any],
+    visual_scores: dict[str, Any],
+) -> dict[str, Any]:
+    text_parts = [
+        str(verification_observations.get(field, "")).lower()
+        for field in (
+            "subject_change_description",
+            "background_change_description",
+            "midtone_change_description",
+            "highlight_shadow_description",
+            "color_change_description",
+            "artifact_description",
+            "crop_dependency_description",
+        )
+    ]
+    combined = " ".join(text_parts)
+    warnings: list[dict[str, Any]] = []
+    if any(term in combined for term in _NEGATIVE_ARTIFACT_TERMS):
+        flagged_values = (
+            ("artifact_free_score", _coerce_float(visual_scores.get("artifact_free_score"), 0.0), 7.0),
+            ("naturalness_score", _coerce_float(visual_scores.get("naturalness_score"), 0.0), 7.0),
+            ("highlight_shadow_quality", _coerce_float(visual_scores.get("highlight_shadow_quality"), 0.0), 7.0),
+        )
+        for field, score, threshold in flagged_values:
+            if score > threshold:
+                warnings.append(
+                    {
+                        "field": field,
+                        "reason": (
+                            "Descriptions mention potential artifacts/unnatural traits "
+                            f"but {field} is {score:.1f}"
+                        ),
+                    }
+                )
+        if str(visual_scores.get("artifact_check", "pass")) == "pass":
+            warnings.append(
+                {
+                    "field": "artifact_check",
+                    "reason": "Descriptions mention artifact-like terms but artifact_check is pass",
+                }
+            )
+    return {"warnings": warnings, "score_adjustments": []}
+
+
+def _has_explicit_verification_scores(payload: dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    possible_scored_payloads = [payload]
+    nested = payload.get("before_after_judgment")
+    if isinstance(nested, dict):
+        possible_scored_payloads.append(nested)
+    nested_scores = payload.get("visual_verification_scores")
+    if isinstance(nested_scores, dict):
+        possible_scored_payloads.append(nested_scores)
+    return any(any(field in candidate for field in _VERIFY_SCORE_FIELDS) for candidate in possible_scored_payloads)
+
+
+async def _prepare_predictive_packet(
+    ctx: Context,
+    *,
+    raw_path: str,
+    style: str,
+    intensity: str,
+    user_brief: str | None,
+    preview_width: int,
+    diagnosis_override: dict[str, Any] | None,
+) -> dict[str, Any]:
     config = get_config(ctx)
     rt_check = _require_rt(config)
     if isinstance(rt_check, dict):
@@ -1431,43 +1658,21 @@ async def auto_edit_predictive(
         for item in validation.blocked_controls
     ]
 
-    correction_applied = False
-    if verification_feedback and isinstance(verification_feedback, dict):
-        recommendation = str(verification_feedback.get("recommendation", ""))
-        suggested = verification_feedback.get("suggested_correction", {})
-        if recommendation == "minor_correction" and isinstance(suggested, dict):
-            parameters = apply_one_step_correction(parameters, suggested)
-            validation = validate_autonomous_parameters(parameters)
-            validation_blocked = [
-                {
-                    "control_id": item.control_id,
-                    "section": item.section,
-                    "key": item.key,
-                    "value": item.value,
-                    "reason": item.reason,
-                }
-                for item in validation.blocked_controls
-            ]
-            correction_applied = True
-
     if not validation.allowed:
         return {
-            "decision": "proof_only",
+            "status": "validation_failed",
+            "decision": "validation_failed",
             "raw_path": str(source_raw),
             "style": style,
             "intensity": intensity,
             "diagnosis": plan["diagnosis"],
             "parameters": parameters,
-            "expected_effect": plan["expected_effect"],
-            "validation": {
-                "allowed": False,
-                "blocked": validation_blocked,
-                "clamped": plan["clamped"],
-            },
+            "expected_effects": plan["expected_effect"],
+            "validation": {"allowed": False, "blocked": validation_blocked, "clamped": plan["clamped"]},
             "blocked_controls_considered": plan["blocked_controls_considered"],
-            "verification_contract": plan["verification_contract"],
-            "reason": "Manifest validation failed; export path is blocked.",
-            "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
+            "approved_curves_used": plan.get("approved_curves_used", []),
+            "verification_packet": _verification_packet("primary subject"),
+            "reason": "Manifest validation failed; verification/export path is blocked.",
         }
 
     profile_name = safe_slug(f"{source_raw.stem}_predictive_{style}_{intensity}")
@@ -1484,23 +1689,21 @@ async def auto_edit_predictive(
     except FileNotFoundError as exc:
         return {"error": str(exc)}
 
-    preview_result = await _render_preview(
+    edited_preview_result = await _render_preview(
         config,
         source_raw,
         Path(profile_path),
         max_width=preview_width,
         label="predictive",
     )
-    if not preview_result.get("success"):
+    if not edited_preview_result.get("success"):
         return {
             "error": "Failed to render predictive preview",
-            "details": preview_result,
+            "details": edited_preview_result,
             "profile_path": str(profile_path),
             "parameters": parameters,
             "validation": {"allowed": True, "blocked": [], "clamped": plan["clamped"]},
-            "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
         }
-
     base_preview_result = await _render_preview(
         config,
         source_raw,
@@ -1508,70 +1711,222 @@ async def auto_edit_predictive(
         max_width=preview_width,
         label="predictive_base",
     )
-    visual_verification_scores, decision_source = normalize_visual_verification_feedback(
-        verification_feedback,
-        planned_scores=plan["planned_scores"],
-        crop_dependency=str(plan["planned_scores"].get("crop_dependency", "unknown")),
+    if not base_preview_result.get("success"):
+        return {
+            "error": "Failed to render base preview",
+            "details": base_preview_result,
+            "profile_path": str(profile_path),
+            "parameters": parameters,
+            "validation": {"allowed": True, "blocked": [], "clamped": plan["clamped"]},
+        }
+
+    before_after_name = f"predictive_compare_{source_raw.stem}_{int(time.time() * 1000)}.jpg"
+    before_after_path = _build_before_after_preview(
+        base_preview_path=base_preview_result.get("preview_path"),
+        edited_preview_path=edited_preview_result.get("preview_path"),
+        output_path=config.preview_dir / before_after_name,
     )
-    normalized_scores = _predictive_export_decision(validation.allowed, visual_verification_scores)
-    normalized_scores["reason"] = visual_verification_scores.get("reason", "")
-    export_allowed = bool(normalized_scores["export_gate_passed"])
-    decision = str(normalized_scores["decision"])
-    output: dict[str, Any] = {
-        "decision": decision,
-        "decision_source": decision_source,
+
+    return {
+        "status": "verification_required",
+        "decision": "verification_required",
+        "decision_source": "auto_edit_predictive_prepare",
         "raw_path": str(source_raw),
         "profile_path": str(profile_path),
-        "preview_path": preview_result.get("preview_path"),
         "base_preview_path": base_preview_result.get("preview_path"),
+        "edited_preview_path": edited_preview_result.get("preview_path"),
+        "preview_path": edited_preview_result.get("preview_path"),
+        "before_after_path": before_after_path,
         "style": style,
         "intensity": intensity,
         "diagnosis": plan["diagnosis"],
         "parameters": parameters,
-        "expected_effect": plan["expected_effect"],
+        "expected_effects": plan["expected_effect"],
         "planned_scores": plan["planned_scores"],
-        "validation": {
-            "allowed": True,
-            "blocked": [],
-            "clamped": plan["clamped"],
-        },
-        "blocked_controls_considered": plan["blocked_controls_considered"],
         "approved_curves_used": plan.get("approved_curves_used", []),
-        "verification_contract": plan["verification_contract"],
-        "visual_verification_scores": normalized_scores,
-        "scores": normalized_scores,
+        "validation": {"allowed": True, "blocked": [], "clamped": plan["clamped"]},
+        "blocked_controls_considered": plan["blocked_controls_considered"],
+        "verification_packet": _verification_packet("primary subject"),
         "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
-        "correction_applied": correction_applied,
     }
 
-    if export:
-        if export_allowed:
-            ext = ".jpg"
-            export_path = config.output_dir / f"{source_raw.stem}_predictive{ext}"
-            process_result = await run_rt_cli(
-                rt_path=rt_check,
-                input_path=source_raw,
-                output_path=export_path,
-                profiles=[Path(profile_path)],
-                output_format="jpeg",
-                jpeg_quality=config.default_jpeg_quality,
-                bit_depth=16,
-            )
-            if process_result.get("success"):
-                output["decision"] = "export_ready"
-                output["export"] = process_result
-            else:
-                output["decision"] = "proof_only"
-                output["export_error"] = process_result
-        else:
-            output["decision"] = decision
-            output["proof_only_reason"] = (
-                "Export gate failed: requires subject_hierarchy_score>=7, "
-                "thumbnail_subject_read_score>=7, artifact_free_score>=8, naturalness_score>=7, "
-                "crop_dependency!=primary, and manifest validation allowed."
-            )
 
-    return output
+@mcp.tool()
+async def auto_edit_predictive_prepare(
+    ctx: Context,
+    raw_path: str,
+    style: str = "warm natural travel",
+    intensity: str = "medium",
+    user_brief: str | None = None,
+    preview_width: int = 1024,
+    diagnosis_override: dict[str, Any] | None = None,
+    verification_feedback: dict[str, Any] | None = None,
+) -> dict[str, Any] | ToolResult:
+    """Prepare predictive edit and previews; final decision must happen in verify_predictive_edit."""
+    if _has_explicit_verification_scores(verification_feedback):
+        return {
+            "error": "verification_feedback_not_allowed_in_prepare",
+            "reason": "Use verify_predictive_edit for visual scoring and final decision.",
+        }
+    prepared = await _prepare_predictive_packet(
+        ctx,
+        raw_path=raw_path,
+        style=style,
+        intensity=intensity,
+        user_brief=user_brief,
+        preview_width=preview_width,
+        diagnosis_override=diagnosis_override,
+    )
+    if prepared.get("status") != "verification_required":
+        return prepared
+    return await _tool_result_with_preview_images(
+        prepared,
+        max_width=preview_width,
+        image_paths=[
+            prepared.get("base_preview_path"),
+            prepared.get("edited_preview_path"),
+            prepared.get("before_after_path"),
+        ],
+    )
+
+
+@mcp.tool()
+async def verify_predictive_edit(
+    ctx: Context,
+    raw_path: str,
+    profile_path: str,
+    base_preview_path: str,
+    edited_preview_path: str,
+    verification_observations: dict[str, Any],
+    export: bool = False,
+    before_after_path: str | None = None,
+    preview_width: int = 1024,
+) -> dict[str, Any] | ToolResult:
+    """Verify a predictive edit from rendered previews and produce the final decision."""
+    config = get_config(ctx)
+    rt_check = _require_rt(config)
+    if isinstance(rt_check, dict):
+        return rt_check
+    try:
+        source_raw = ensure_existing_file(raw_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+    profile = Path(profile_path)
+    if not profile.is_file():
+        return {"error": f"Profile not found: {profile_path}"}
+    if not Path(base_preview_path).is_file():
+        return {"error": f"Base preview not found: {base_preview_path}"}
+    if not Path(edited_preview_path).is_file():
+        return {"error": f"Edited preview not found: {edited_preview_path}"}
+    if not isinstance(verification_observations, dict):
+        return {"error": "verification_observations_required"}
+
+    missing_descriptions = _verify_required_descriptions(verification_observations)
+    if missing_descriptions:
+        return {"error": "verification_observations_required", "missing_fields": missing_descriptions}
+
+    scores_raw = verification_observations.get("scores", {})
+    if not isinstance(scores_raw, dict):
+        scores_raw = {}
+    normalized_input_scores = _normalize_verification_observed_scores(
+        scores_raw,
+        crop_dependency="secondary",
+    )
+    normalized_scores = _predictive_export_decision(True, normalized_input_scores)
+    consistency = _consistency_checks(verification_observations, normalized_scores)
+    decision = str(normalized_scores.get("decision", "proof_only"))
+
+    resolved_before_after_path = before_after_path
+    if not resolved_before_after_path:
+        before_after_name = f"predictive_verify_{source_raw.stem}_{int(time.time() * 1000)}.jpg"
+        resolved_before_after_path = _build_before_after_preview(
+            base_preview_path=base_preview_path,
+            edited_preview_path=edited_preview_path,
+            output_path=config.preview_dir / before_after_name,
+        )
+
+    export_path: str | None = None
+    if export and bool(normalized_scores.get("export_gate_passed")) and decision == "export":
+        output_path = config.output_dir / f"{source_raw.stem}_predictive_verified.jpg"
+        process_result = await run_rt_cli(
+            rt_path=rt_check,
+            input_path=source_raw,
+            output_path=output_path,
+            profiles=[profile],
+            output_format="jpeg",
+            jpeg_quality=config.default_jpeg_quality,
+            bit_depth=16,
+        )
+        if process_result.get("success"):
+            export_path = str(output_path)
+        else:
+            decision = "proof_only"
+
+    output: dict[str, Any] = {
+        "decision_source": "verify_predictive_edit",
+        "raw_path": str(source_raw),
+        "profile_path": str(profile),
+        "base_preview_path": base_preview_path,
+        "edited_preview_path": edited_preview_path,
+        "before_after_path": resolved_before_after_path,
+        "visual_verification_scores": normalized_scores,
+        "verification_observations": verification_observations,
+        "consistency_checks": consistency,
+        "non_crop_edit_quality": normalized_scores.get("non_crop_edit_quality", "fail"),
+        "decision": decision,
+        "export_gate_passed": bool(normalized_scores.get("export_gate_passed")),
+        "reason": str(
+            normalized_scores.get(
+                "non_crop_edit_quality_reason",
+                "Verification scores did not support a stronger non-crop edit quality decision.",
+            )
+        ),
+        "export_path": export_path,
+    }
+    return await _tool_result_with_preview_images(
+        output,
+        max_width=preview_width,
+        image_paths=[base_preview_path, edited_preview_path, resolved_before_after_path],
+    )
+
+
+@mcp.tool()
+async def auto_edit_predictive(
+    ctx: Context,
+    raw_path: str,
+    style: str = "warm natural travel",
+    intensity: str = "medium",
+    user_brief: str | None = None,
+    export: bool = False,
+    preview_width: int = 1024,
+    diagnosis_override: dict[str, Any] | None = None,
+    verification_feedback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper for prepare-first predictive editing.
+
+    This wrapper intentionally cannot produce a final visual-verification
+    decision. Use verify_predictive_edit for final scoring and export gating.
+    """
+    prepared = await _prepare_predictive_packet(
+        ctx,
+        raw_path=raw_path,
+        style=style,
+        intensity=intensity,
+        user_brief=user_brief,
+        preview_width=preview_width,
+        diagnosis_override=diagnosis_override,
+    )
+    if isinstance(prepared, dict):
+        prepared["deprecated"] = True
+        prepared["deprecated_reason"] = (
+            "auto_edit_predictive no longer accepts same-call verification/export decisions. "
+            "Call auto_edit_predictive_prepare, inspect previews, then call verify_predictive_edit."
+        )
+        if verification_feedback is not None:
+            prepared["ignored_verification_feedback"] = True
+        if export:
+            prepared["export_blocked_until_verification"] = True
+    return prepared
 
 
 @mcp.tool()

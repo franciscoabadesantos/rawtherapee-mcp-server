@@ -16,6 +16,7 @@ from rawtherapee_mcp.server import (
     adjust_profile,
     analyze_image,
     apply_local_preset,
+    auto_edit_predictive,
     batch_analyze,
     batch_preview,
     check_rt_status,
@@ -33,6 +34,7 @@ from rawtherapee_mcp.server import (
     get_histogram,
     infer_photo_intent,
     interpolate_profiles,
+    legacy_generate_vision_candidates,
     list_local_adjustments,
     list_raw_files,
     list_visual_editing_moves,
@@ -178,7 +180,8 @@ class TestEditorialWorkflowTools:
         assert "error" not in result
         assert result["file_path"] == str(raw_file)
         assert "editing_vision_schema" in result
-        assert "generate_vision_candidates" in result["next_recommended_tools"]
+        assert "auto_edit_predictive" in result["next_recommended_tools"]
+        assert "legacy_generate_vision_candidates" in result["next_recommended_tools"]
 
     async def test_create_composition_plan_returns_contract(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
@@ -211,6 +214,8 @@ class TestEditorialWorkflowTools:
         tools = await mcp.list_tools()
         names = {tool.name for tool in tools}
         assert "visual_moves_to_parameters" in names
+        assert "auto_edit_predictive" in names
+        assert "legacy_generate_vision_candidates" in names
         assert "create_composition_plan" in names
         assert "generate_crop_candidates" in names
 
@@ -304,6 +309,7 @@ class TestEditorialWorkflowTools:
             },
         )
         assert "error" not in result
+        assert result["legacy_status"] == "deprecated for autonomous default use"
         assert len(result["candidates"]) == 3
         assert [candidate["candidate_name"] for candidate in result["candidates"]] == [
             "faithful_refinement",
@@ -336,6 +342,210 @@ class TestEditorialWorkflowTools:
             assert profile.get("SharpenMicro", "Uniformity", "") == ""
             assert profile.get("Local Contrast", "Amount", "") == ""
             assert "local_contrast" not in candidate["merged_parameter_summary"]["groups"]
+
+    async def test_legacy_generate_vision_candidates_wrapper(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+        result = await legacy_generate_vision_candidates(
+            mock_ctx,
+            str(raw_file),
+            "legacy_frame",
+            editing_vision={
+                "emotional_goal": "urban travel clarity",
+                "visual_anchor": "tram front and rails",
+                "preserve": ["street context"],
+                "editing_moves": ["emphasize_subject", "enhance_geometry"],
+            },
+        )
+        assert "error" not in result
+        assert result["legacy_tool"] is True
+
+    async def test_auto_edit_predictive_uses_manifest_allowed_controls(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1024, 768), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                style="warm natural travel",
+                intensity="medium",
+                user_brief="Barcelona travel frame with stronger natural presence",
+                export=False,
+            )
+
+        assert "error" not in result
+        assert result["decision"] == "preview_ready"
+        assert result["validation"]["allowed"] is True
+        assert "local_contrast" not in result["parameters"]
+        assert "tone_curve" not in result["parameters"]
+        assert "rgb_curves" not in result["parameters"]
+        hsv = result["parameters"].get("hsv_equalizer", {})
+        assert "h_curve" not in hsv
+
+    async def test_auto_edit_predictive_maps_flat_midtone_geometry(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                style="warm natural travel",
+                intensity="medium",
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "medium",
+                    "diagnosis": [{"issue": "flat_midtone_geometry", "severity": 0.8, "evidence": "thumbnail weak"}],
+                    "crop_need": "low",
+                },
+            )
+
+        params = result["parameters"]
+        assert "exposure" in params and "contrast" in params["exposure"]
+        assert "luminance_curve" in params and params["luminance_curve"].get("enabled") is True
+        assert "microcontrast" in params and "amount" in params["microcontrast"]
+        blocked = {item["control"] for item in result["blocked_controls_considered"]}
+        assert "Local Contrast.Amount" in blocked
+
+    async def test_auto_edit_predictive_maps_dull_color_presence(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "medium",
+                    "diagnosis": [{"issue": "dull_color_presence", "severity": 0.7, "evidence": "muted color"}],
+                    "crop_need": "low",
+                },
+            )
+
+        params = result["parameters"]
+        assert params["vibrance"]["enabled"] is True
+        assert "pastels" in params["vibrance"]
+        assert "saturated" in params["vibrance"]
+        assert "saturation" in params["exposure"]
+
+    async def test_auto_edit_predictive_maps_bright_sky_controls(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "medium",
+                    "diagnosis": [{"issue": "bright_sky_needs_control", "severity": 0.8, "evidence": "bright cloud"}],
+                    "crop_need": "low",
+                },
+            )
+
+        params = result["parameters"]
+        assert "highlight_compression" in params["exposure"]
+        assert "highlight_rolloff" in params
+        assert "highlights" in params["highlight_rolloff"]
+        assert "highlight_compression_threshold" in params["highlight_rolloff"]
+
+    async def test_auto_edit_predictive_high_intensity_correction_is_clamped(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                intensity="high",
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "high",
+                    "diagnosis": [{"issue": "flat_midtone_geometry", "severity": 1.0, "evidence": "very flat"}],
+                    "crop_need": "low",
+                },
+                verification_feedback={
+                    "recommendation": "minor_correction",
+                    "suggested_correction": {"Exposure.Contrast": "+100"},
+                },
+            )
+
+        assert result["correction_applied"] is True
+        assert result["parameters"]["exposure"]["contrast"] <= 20
+
+    async def test_auto_edit_predictive_does_not_call_legacy_flow(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with (
+            patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview),
+            patch(
+                "rawtherapee_mcp.server.generate_vision_candidates",
+                side_effect=RuntimeError("legacy should not run"),
+            ),
+        ):
+            result = await auto_edit_predictive(mock_ctx, str(raw_file), export=False)
+
+        assert "error" not in result
+        assert result["decision"] == "preview_ready"
+
+    async def test_auto_edit_predictive_export_gate_rejects_weak_or_crop_primary(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                export=True,
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "medium",
+                    "diagnosis": [{"issue": "proof_only_needed", "severity": 0.9, "evidence": "weak frame"}],
+                    "crop_need": "mild",
+                },
+            )
+
+        assert result["decision"] == "proof_only"
+        assert result["scores"]["export_gate_passed"] is False
 
     async def test_generate_crop_candidates_returns_safe_crop_only_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

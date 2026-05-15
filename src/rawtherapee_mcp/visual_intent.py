@@ -73,7 +73,7 @@ _UNFILLED_CONTRACT_KEYS = (
 )
 _UNFILLED_CONTRACT_ERROR = (
     "This looks like an unfilled editing vision contract. Preview the image, fill emotional_goal, "
-    "visual_anchor, preserve, avoid, and editing_moves, then call generate_vision_candidates again."
+    "visual_anchor, preserve, avoid, and editing_moves, then call auto_edit_predictive again."
 )
 _COLOR_DRIFT_AVOID_TERMS = (
     "orange/blue",
@@ -531,7 +531,8 @@ def build_editing_vision_contract(
             "list_visual_editing_moves",
             "create_composition_plan",
             "create_editorial_brief",
-            "generate_vision_candidates",
+            "auto_edit_predictive",
+            "legacy_generate_vision_candidates",
             "generate_crop_candidates",
             "critique_gate",
         ],

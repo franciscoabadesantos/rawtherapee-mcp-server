@@ -29,7 +29,7 @@ SUPPORTED_EDITORIAL_STYLES = (
 _DEFAULT_RECOMMENDED_WORKFLOW = [
     "create_editing_vision",
     "create_editorial_brief",
-    "generate_vision_candidates or generate_editorial_candidates",
+    "auto_edit_predictive (default) or legacy_generate_vision_candidates (debug)",
     "preview_raw or preview_before_after",
     "critique_gate",
     "adjust_profile or refine using visual moves (only when critique says refine)",
@@ -552,7 +552,8 @@ def build_intent_inference_contract(
             "preview_raw",
             "create_editing_vision",
             "create_editorial_brief",
-            "generate_editorial_candidates",
+            "auto_edit_predictive",
+            "legacy_generate_vision_candidates",
             "critique_gate",
         ],
     }
@@ -1162,7 +1163,7 @@ def build_curation_plan(
         },
         "suggested_batch_prompt": (
             "Be strict: classify each RAW as reject/proof_only/edit_candidate/strong_keeper. "
-            "Only run generate_editorial_candidates on strong_keeper files."
+            "Only run auto_edit_predictive (or legacy_generate_vision_candidates for debug) on strong_keeper files."
         ),
         "export_policy": [
             "Do not export finals for reject files.",

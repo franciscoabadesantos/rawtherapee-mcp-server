@@ -24,6 +24,7 @@ from mcp.types import ImageContent, TextContent
 from rawtherapee_mcp import __version__
 from rawtherapee_mcp.advanced_color import merge_parameter_sets
 from rawtherapee_mcp.config import RTConfig, load_config
+from rawtherapee_mcp.control_policy import validate_autonomous_parameters
 from rawtherapee_mcp.device_presets import (
     add_custom_preset,
     delete_custom_preset,
@@ -76,6 +77,10 @@ from rawtherapee_mcp.pp3_generator import (
 )
 from rawtherapee_mcp.pp3_generator import generate_profile as _generate_profile
 from rawtherapee_mcp.pp3_parser import PP3Profile
+from rawtherapee_mcp.predictive_editor import (
+    apply_one_step_correction,
+    build_predictive_edit_plan,
+)
 from rawtherapee_mcp.profile_hierarchy import create_variant as _create_variant
 from rawtherapee_mcp.profile_hierarchy import list_variants as _list_variants
 from rawtherapee_mcp.profile_hierarchy import propagate_to_variants as _propagate_to_variants
@@ -1162,6 +1167,7 @@ async def generate_vision_candidates(
 
     Creates faithful_refinement, expressive_refinement, and restrained_experiment
     profiles from the editing vision instead of fixed style presets.
+    Legacy path: deprecated for autonomous default use.
     Params: file_path, base_name, editing_vision, intensity, device_preset
     """
     config = get_config(ctx)
@@ -1234,12 +1240,252 @@ async def generate_vision_candidates(
         "intensity": intensity,
         "device_preset": device_preset,
         "editing_vision": editing_vision,
+        "legacy_status": "deprecated for autonomous default use",
+        "deprecated_reason": (
+            "Use auto_edit_predictive as the default autonomous path; "
+            "generate_vision_candidates remains for legacy comparison/debug."
+        ),
         "candidates": candidates,
         "workflow_reminder": (
             "Preview all three candidates, critique them against the editing vision, "
             "and export only when the chosen candidate clearly fits the vision."
         ),
     }
+
+
+@mcp.tool()
+async def legacy_generate_vision_candidates(
+    ctx: Context,
+    file_path: str,
+    base_name: str,
+    editing_vision: dict[str, Any],
+    intensity: str = "medium",
+    device_preset: str | None = None,
+) -> dict[str, Any]:
+    """Legacy visual-move candidate generator (deprecated default path).
+
+    This exposes the old autonomous candidate flow explicitly for debug and
+    A/B comparison. Default autonomous editing should use auto_edit_predictive.
+    """
+    result = await generate_vision_candidates(
+        ctx,
+        file_path=file_path,
+        base_name=base_name,
+        editing_vision=editing_vision,
+        intensity=intensity,
+        device_preset=device_preset,
+    )
+    if "error" not in result:
+        result["legacy_tool"] = True
+    return result
+
+
+def _should_allow_predictive_export(
+    *,
+    validation_allowed: bool,
+    visible_difference_score: float,
+    hierarchy_improvement_score: float,
+    artifact_check: str,
+    crop_dependency: str,
+) -> bool:
+    """Export gate for predictive edits."""
+    return (
+        validation_allowed
+        and visible_difference_score >= 7.0
+        and hierarchy_improvement_score >= 7.0
+        and artifact_check == "pass"
+        and crop_dependency != "primary"
+    )
+
+
+@mcp.tool()
+async def auto_edit_predictive(
+    ctx: Context,
+    raw_path: str,
+    style: str = "warm natural travel",
+    intensity: str = "medium",
+    user_brief: str | None = None,
+    export: bool = False,
+    preview_width: int = 1024,
+    diagnosis_override: dict[str, Any] | None = None,
+    verification_feedback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Default autonomous editor using manifest-backed predictive planning.
+
+    Contract:
+    visual diagnosis -> manifest-backed control selection -> bounded PP3 delta ->
+    preview verification contract -> optional one-step correction -> export gate.
+    """
+    config = get_config(ctx)
+    rt_check = _require_rt(config)
+    if isinstance(rt_check, dict):
+        return rt_check
+
+    try:
+        source_raw = ensure_existing_file(raw_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    plan = build_predictive_edit_plan(
+        style=style,
+        intensity=intensity,
+        user_brief=user_brief,
+        diagnosis_payload=diagnosis_override,
+    )
+    parameters = plan["parameters"]
+    validation = validate_autonomous_parameters(parameters)
+    validation_blocked = [
+        {
+            "control_id": item.control_id,
+            "section": item.section,
+            "key": item.key,
+            "value": item.value,
+            "reason": item.reason,
+        }
+        for item in validation.blocked_controls
+    ]
+
+    correction_applied = False
+    if verification_feedback and isinstance(verification_feedback, dict):
+        recommendation = str(verification_feedback.get("recommendation", ""))
+        suggested = verification_feedback.get("suggested_correction", {})
+        if recommendation == "minor_correction" and isinstance(suggested, dict):
+            parameters = apply_one_step_correction(parameters, suggested)
+            validation = validate_autonomous_parameters(parameters)
+            validation_blocked = [
+                {
+                    "control_id": item.control_id,
+                    "section": item.section,
+                    "key": item.key,
+                    "value": item.value,
+                    "reason": item.reason,
+                }
+                for item in validation.blocked_controls
+            ]
+            correction_applied = True
+
+    if not validation.allowed:
+        return {
+            "decision": "proof_only",
+            "raw_path": str(source_raw),
+            "style": style,
+            "intensity": intensity,
+            "diagnosis": plan["diagnosis"],
+            "parameters": parameters,
+            "expected_effect": plan["expected_effect"],
+            "validation": {
+                "allowed": False,
+                "blocked": validation_blocked,
+                "clamped": plan["clamped"],
+            },
+            "blocked_controls_considered": plan["blocked_controls_considered"],
+            "verification_contract": plan["verification_contract"],
+            "reason": "Manifest validation failed; export path is blocked.",
+            "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
+        }
+
+    profile_name = safe_slug(f"{source_raw.stem}_predictive_{style}_{intensity}")
+    templates_dir = _get_templates_dir()
+    try:
+        _profile, profile_path = _generate_profile(
+            name=profile_name,
+            base_template="neutral",
+            parameters=parameters,
+            device_preset=None,
+            templates_dir=templates_dir,
+            custom_templates_dir=config.custom_templates_dir,
+        )
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    preview_result = await _render_preview(
+        config,
+        source_raw,
+        Path(profile_path),
+        max_width=preview_width,
+        label="predictive",
+    )
+    if not preview_result.get("success"):
+        return {
+            "error": "Failed to render predictive preview",
+            "details": preview_result,
+            "profile_path": str(profile_path),
+            "parameters": parameters,
+            "validation": {"allowed": True, "blocked": [], "clamped": plan["clamped"]},
+            "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
+        }
+
+    scores = plan["scores"]
+    visible_difference_score = float(scores["visible_difference_score"])
+    hierarchy_improvement_score = float(scores["hierarchy_improvement_score"])
+    artifact_check = str(scores["artifact_check"])
+    crop_dependency = str(scores["crop_dependency"])
+
+    export_allowed = _should_allow_predictive_export(
+        validation_allowed=validation.allowed,
+        visible_difference_score=visible_difference_score,
+        hierarchy_improvement_score=hierarchy_improvement_score,
+        artifact_check=artifact_check,
+        crop_dependency=crop_dependency,
+    )
+
+    decision = "preview_ready"
+    output: dict[str, Any] = {
+        "decision": decision,
+        "raw_path": str(source_raw),
+        "profile_path": str(profile_path),
+        "preview_path": preview_result.get("preview_path"),
+        "style": style,
+        "intensity": intensity,
+        "diagnosis": plan["diagnosis"],
+        "parameters": parameters,
+        "expected_effect": plan["expected_effect"],
+        "validation": {
+            "allowed": True,
+            "blocked": [],
+            "clamped": plan["clamped"],
+        },
+        "blocked_controls_considered": plan["blocked_controls_considered"],
+        "verification_contract": plan["verification_contract"],
+        "scores": {
+            "visible_difference_score": visible_difference_score,
+            "hierarchy_improvement_score": hierarchy_improvement_score,
+            "artifact_check": artifact_check,
+            "crop_dependency": crop_dependency,
+            "export_gate_passed": export_allowed,
+        },
+        "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
+        "correction_applied": correction_applied,
+    }
+
+    if export:
+        if export_allowed:
+            ext = ".jpg"
+            export_path = config.output_dir / f"{source_raw.stem}_predictive{ext}"
+            process_result = await run_rt_cli(
+                rt_path=rt_check,
+                input_path=source_raw,
+                output_path=export_path,
+                profiles=[Path(profile_path)],
+                output_format="jpeg",
+                jpeg_quality=config.default_jpeg_quality,
+                bit_depth=16,
+            )
+            if process_result.get("success"):
+                output["decision"] = "export_ready"
+                output["export"] = process_result
+            else:
+                output["decision"] = "proof_only"
+                output["export_error"] = process_result
+        else:
+            output["decision"] = "proof_only"
+            output["proof_only_reason"] = (
+                "Export gate failed: requires visible_difference_score>=7, "
+                "hierarchy_improvement_score>=7, artifact_check=pass, crop_dependency!=primary, "
+                "and manifest validation allowed."
+            )
+
+    return output
 
 
 @mcp.tool()

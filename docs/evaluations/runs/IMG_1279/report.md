@@ -1,6 +1,9 @@
 # Predictive Editor Evaluation
 
-- raw_path: `/home/franciscosantos/Pictures/rawtherapee-output/IMG_1279.jpg`
+- raw_path: `/mnt/c/Users/santo/Pictures/IMG_1279.CR3`
+- source_type: `raw`
+- is_raw_regression: `True`
+- calibration_allowed: `True`
 - brief: `warm natural travel edit; improve subject separation and color presence without fake HDR`
 - intensity: `medium`
 - style: `warm natural travel edit; improve subject separation and color presence without fake HDR`
@@ -57,14 +60,81 @@
 ## Export Gate
 ```json
 {
-  "visible_difference_score": 9.6,
-  "hierarchy_improvement_score": 8.0,
+  "global_visible_difference_score": 9.6,
+  "subject_hierarchy_score": 6.4,
+  "thumbnail_subject_read_score": 6.4,
+  "color_quality_score": 7.1,
+  "naturalness_score": 8.0,
+  "artifact_free_score": 9.0,
   "artifact_check": "pass",
   "crop_dependency": "secondary",
-  "decision": "export",
-  "export_gate_passed": true,
+  "decision": "proof_plus",
+  "export_gate_passed": false,
+  "gate_requirements": {
+    "subject_hierarchy_score_min": 7.0,
+    "thumbnail_subject_read_score_min": 7.0,
+    "artifact_free_score_min": 8.0,
+    "naturalness_score_min": 7.0,
+    "crop_dependency": "not primary",
+    "validation_allowed": true
+  },
+  "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
+  "visible_difference_score": 9.6,
+  "hierarchy_improvement_score": 6.4,
   "export_requested": false,
-  "runtime_decision": "preview_ready"
+  "runtime_decision": "proof_plus"
+}
+```
+
+## Manual Score Comparison
+```json
+{
+  "automated_scores": {
+    "global_visible_difference_score": 9.6,
+    "subject_hierarchy_score": 6.4,
+    "thumbnail_subject_read_score": 6.4,
+    "color_quality_score": 7.1,
+    "naturalness_score": 8.0,
+    "artifact_free_score": 9.0,
+    "artifact_check": "pass",
+    "crop_dependency": "secondary",
+    "decision": "proof_plus",
+    "export_gate_passed": false,
+    "gate_requirements": {
+      "subject_hierarchy_score_min": 7.0,
+      "thumbnail_subject_read_score_min": 7.0,
+      "artifact_free_score_min": 8.0,
+      "naturalness_score_min": 7.0,
+      "crop_dependency": "not primary",
+      "validation_allowed": true
+    },
+    "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
+    "visible_difference_score": 9.6,
+    "hierarchy_improvement_score": 6.4,
+    "export_requested": false,
+    "runtime_decision": "proof_plus"
+  },
+  "human_scores": {
+    "image": "IMG_1279",
+    "brief": "warm natural travel edit; improve subject separation and color presence without fake HDR",
+    "intensity": "medium",
+    "visible_difference": 7.0,
+    "hierarchy_improvement": 6.0,
+    "color_quality": 7.0,
+    "naturalness": 8.0,
+    "artifact_free": 8.0,
+    "crop_dependency": "none",
+    "decision_correct": "yes",
+    "notes": "Visible non-crop tonal/color improvement; banned controls absent; hierarchy gain remains below export threshold, so proof_plus is the correct decision."
+  },
+  "score_delta": {
+    "visible_difference": "+2.6",
+    "hierarchy_improvement": "+0.4",
+    "color_quality": "+0.1",
+    "naturalness": "+0.0",
+    "artifact_free": "+1.0",
+    "decision_correct": "yes"
+  }
 }
 ```
 

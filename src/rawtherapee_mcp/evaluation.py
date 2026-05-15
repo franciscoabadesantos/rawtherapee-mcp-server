@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,43 @@ from PIL import Image as PILImage
 
 from rawtherapee_mcp.config import RTConfig, load_config
 from rawtherapee_mcp.server import auto_edit_predictive, preview_before_after, preview_raw
+
+RAW_SUFFIXES = {
+    ".cr2",
+    ".cr3",
+    ".nef",
+    ".nrw",
+    ".arw",
+    ".srf",
+    ".sr2",
+    ".raf",
+    ".orf",
+    ".rw2",
+    ".rwl",
+    ".dng",
+    ".pef",
+    ".ptx",
+    ".3fr",
+    ".fff",
+    ".iiq",
+    ".mrw",
+    ".mef",
+    ".mos",
+    ".kdc",
+    ".dcr",
+    ".raw",
+    ".srw",
+    ".x3f",
+    ".erf",
+}
+IMAGE_SUFFIX_TO_SOURCE_TYPE = {
+    ".jpg": "jpeg",
+    ".jpeg": "jpeg",
+    ".tif": "tiff",
+    ".tiff": "tiff",
+    ".png": "png",
+}
+SCORES_CSV = Path("docs") / "evaluations" / "predictive_editor_scores.csv"
 
 
 @dataclass
@@ -71,11 +109,126 @@ def _contains_banned_controls(parameters: dict[str, Any]) -> dict[str, bool]:
     }
 
 
+def _source_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in RAW_SUFFIXES:
+        return "raw"
+    return IMAGE_SUFFIX_TO_SOURCE_TYPE.get(suffix, "unknown")
+
+
+def _decision_from_scores(scores: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    validation_allowed = bool(validation.get("allowed", False))
+    global_visible = float(scores.get("global_visible_difference_score", scores.get("visible_difference_score", 0)))
+    subject_hierarchy = float(scores.get("subject_hierarchy_score", scores.get("hierarchy_improvement_score", 0)))
+    thumbnail_read = float(scores.get("thumbnail_subject_read_score", scores.get("hierarchy_improvement_score", 0)))
+    color_quality = float(scores.get("color_quality_score", 0))
+    naturalness = float(scores.get("naturalness_score", 0))
+    artifact_free = float(scores.get("artifact_free_score", 9 if scores.get("artifact_check") == "pass" else 0))
+    crop_dependency = str(scores.get("crop_dependency", "unknown"))
+    export_gate_passed = (
+        validation_allowed
+        and subject_hierarchy >= 7.0
+        and thumbnail_read >= 7.0
+        and artifact_free >= 8.0
+        and naturalness >= 7.0
+        and crop_dependency != "primary"
+    )
+    if export_gate_passed:
+        decision = "export"
+    elif crop_dependency == "primary" or global_visible < 5.5:
+        decision = "proof_only"
+    else:
+        decision = "proof_plus"
+    return {
+        "global_visible_difference_score": global_visible,
+        "subject_hierarchy_score": subject_hierarchy,
+        "thumbnail_subject_read_score": thumbnail_read,
+        "color_quality_score": color_quality,
+        "naturalness_score": naturalness,
+        "artifact_free_score": artifact_free,
+        "artifact_check": "pass" if artifact_free >= 8.0 else "fail",
+        "crop_dependency": crop_dependency,
+        "decision": decision,
+        "export_gate_passed": export_gate_passed,
+        "gate_requirements": {
+            "subject_hierarchy_score_min": 7.0,
+            "thumbnail_subject_read_score_min": 7.0,
+            "artifact_free_score_min": 8.0,
+            "naturalness_score_min": 7.0,
+            "crop_dependency": "not primary",
+            "validation_allowed": True,
+        },
+        "scoring_guidance": (
+            "Hierarchy score should answer: does the intended subject become easier and faster "
+            "to read than competing structures?"
+        ),
+        "visible_difference_score": global_visible,
+        "hierarchy_improvement_score": subject_hierarchy,
+    }
+
+
+def _maybe_number(value: str) -> float | str:
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def _load_human_score(source: Path, brief: str, intensity: str, scores_csv: Path = SCORES_CSV) -> dict[str, Any] | None:
+    if not scores_csv.is_file():
+        return None
+    with scores_csv.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if not row:
+                continue
+            image_matches = row.get("image") in {source.stem, source.name}
+            brief_matches = not row.get("brief") or row.get("brief") == brief
+            intensity_matches = not row.get("intensity") or row.get("intensity") == intensity
+            if image_matches and brief_matches and intensity_matches:
+                return {key: _maybe_number(value) for key, value in row.items() if value != ""}
+    return None
+
+
+def _manual_score_comparison(
+    *,
+    source: Path,
+    brief: str,
+    intensity: str,
+    automated_scores: dict[str, Any],
+) -> dict[str, Any] | None:
+    human_scores = _load_human_score(source, brief, intensity)
+    if human_scores is None:
+        return None
+    score_delta: dict[str, Any] = {}
+    mapping = {
+        "visible_difference": "global_visible_difference_score",
+        "hierarchy_improvement": "subject_hierarchy_score",
+        "color_quality": "color_quality_score",
+        "naturalness": "naturalness_score",
+        "artifact_free": "artifact_free_score",
+    }
+    for human_key, auto_key in mapping.items():
+        human_value = human_scores.get(human_key)
+        auto_value = automated_scores.get(auto_key)
+        if isinstance(human_value, (int, float)) and isinstance(auto_value, (int, float)):
+            score_delta[human_key] = f"{auto_value - human_value:+.1f}"
+    if "decision_correct" in human_scores:
+        score_delta["decision_correct"] = human_scores["decision_correct"]
+    return {
+        "automated_scores": automated_scores,
+        "human_scores": human_scores,
+        "score_delta": score_delta,
+    }
+
+
 def _render_markdown_report(report: dict[str, Any]) -> str:
     lines: list[str] = []
     lines.append("# Predictive Editor Evaluation")
     lines.append("")
     lines.append(f"- raw_path: `{report['raw_path']}`")
+    lines.append(f"- source_type: `{report['source_type']}`")
+    lines.append(f"- is_raw_regression: `{report['is_raw_regression']}`")
+    lines.append(f"- calibration_allowed: `{report['calibration_allowed']}`")
     lines.append(f"- brief: `{report['brief']}`")
     lines.append(f"- intensity: `{report['intensity']}`")
     lines.append(f"- style: `{report['style']}`")
@@ -103,6 +256,13 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
     lines.append("```json")
     lines.append(json.dumps(report.get("export_gate", {}), indent=2))
     lines.append("```")
+    comparison = report.get("manual_score_comparison")
+    if isinstance(comparison, dict):
+        lines.append("")
+        lines.append("## Manual Score Comparison")
+        lines.append("```json")
+        lines.append(json.dumps(comparison, indent=2))
+        lines.append("```")
     lines.append("")
     lines.append("## Preview Files")
     files = report.get("files", {})
@@ -194,20 +354,25 @@ async def run_predictive_evaluation(
         validation = {}
 
     banned_checks = _contains_banned_controls(parameters)
-    export_gate_passed = bool(scores.get("export_gate_passed", False))
-    export_gate = {
-        "visible_difference_score": scores.get("visible_difference_score", 0),
-        "hierarchy_improvement_score": scores.get("hierarchy_improvement_score", 0),
-        "artifact_check": scores.get("artifact_check", "unknown"),
-        "crop_dependency": scores.get("crop_dependency", "unknown"),
-        "decision": "export" if export_gate_passed else "proof_only",
-        "export_gate_passed": export_gate_passed,
-        "export_requested": export,
-        "runtime_decision": predictive_result.get("decision"),
-    }
+    source_type = _source_type(source)
+    is_raw_regression = source_type == "raw"
+    calibration_allowed = is_raw_regression
+    export_gate = _decision_from_scores(scores, validation)
+    export_gate["export_requested"] = export
+    export_gate["runtime_decision"] = predictive_result.get("decision")
+    manual_score_comparison = _manual_score_comparison(
+        source=source,
+        brief=brief,
+        intensity=intensity,
+        automated_scores=export_gate,
+    )
 
     report: dict[str, Any] = {
         "raw_path": str(source),
+        "source_path": str(source),
+        "source_type": source_type,
+        "is_raw_regression": is_raw_regression,
+        "calibration_allowed": calibration_allowed,
         "brief": brief,
         "intensity": intensity,
         "style": style or brief,
@@ -217,6 +382,7 @@ async def run_predictive_evaluation(
         "validation": validation,
         "blocked_controls_considered": predictive_result.get("blocked_controls_considered", []),
         "export_gate": export_gate,
+        "manual_score_comparison": manual_score_comparison,
         "failure_mode_checks": banned_checks,
         "files": {
             "base_preview": base_preview_path,

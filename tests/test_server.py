@@ -380,7 +380,7 @@ class TestEditorialWorkflowTools:
             )
 
         assert "error" not in result
-        assert result["decision"] == "preview_ready"
+        assert result["decision"] in {"proof_plus", "export"}
         assert result["validation"]["allowed"] is True
         assert "local_contrast" not in result["parameters"]
         assert "tone_curve" not in result["parameters"]
@@ -520,7 +520,7 @@ class TestEditorialWorkflowTools:
             result = await auto_edit_predictive(mock_ctx, str(raw_file), export=False)
 
         assert "error" not in result
-        assert result["decision"] == "preview_ready"
+        assert result["decision"] in {"proof_plus", "export"}
 
     async def test_auto_edit_predictive_export_gate_rejects_weak_or_crop_primary(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"

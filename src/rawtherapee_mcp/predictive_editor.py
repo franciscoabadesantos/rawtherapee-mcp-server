@@ -23,6 +23,12 @@ DIAGNOSIS_VOCAB = {
 }
 
 _INTENSITY_SCALE = {"low": 0.7, "medium": 1.0, "high": 1.25}
+EXPORT_SCORE_MINIMUMS = {
+    "subject_hierarchy_score": 7.0,
+    "thumbnail_subject_read_score": 7.0,
+    "artifact_free_score": 8.0,
+    "naturalness_score": 7.0,
+}
 
 _CONTROL_TO_FRIENDLY: dict[str, tuple[str, str]] = {
     "Exposure.Compensation": ("exposure", "compensation"),
@@ -399,6 +405,51 @@ def _issue_names(diagnosis: list[dict[str, Any]]) -> set[str]:
     return {str(item.get("issue", "")) for item in diagnosis}
 
 
+def score_predictive_export_decision(
+    *,
+    validation_allowed: bool,
+    global_visible_difference_score: float,
+    subject_hierarchy_score: float,
+    thumbnail_subject_read_score: float,
+    color_quality_score: float,
+    naturalness_score: float,
+    artifact_free_score: float,
+    crop_dependency: str,
+) -> dict[str, Any]:
+    """Return strict export/proof decision from separated verification scores."""
+    export_gate_passed = (
+        validation_allowed
+        and subject_hierarchy_score >= EXPORT_SCORE_MINIMUMS["subject_hierarchy_score"]
+        and thumbnail_subject_read_score >= EXPORT_SCORE_MINIMUMS["thumbnail_subject_read_score"]
+        and artifact_free_score >= EXPORT_SCORE_MINIMUMS["artifact_free_score"]
+        and naturalness_score >= EXPORT_SCORE_MINIMUMS["naturalness_score"]
+        and crop_dependency != "primary"
+    )
+    if export_gate_passed:
+        decision = "export"
+    elif crop_dependency == "primary" or global_visible_difference_score < 5.5:
+        decision = "proof_only"
+    else:
+        decision = "proof_plus"
+
+    return {
+        "decision": decision,
+        "export_gate_passed": export_gate_passed,
+        "gate_requirements": {
+            "subject_hierarchy_score_min": EXPORT_SCORE_MINIMUMS["subject_hierarchy_score"],
+            "thumbnail_subject_read_score_min": EXPORT_SCORE_MINIMUMS["thumbnail_subject_read_score"],
+            "artifact_free_score_min": EXPORT_SCORE_MINIMUMS["artifact_free_score"],
+            "naturalness_score_min": EXPORT_SCORE_MINIMUMS["naturalness_score"],
+            "crop_dependency": "not primary",
+            "validation_allowed": True,
+        },
+        "scoring_guidance": (
+            "Hierarchy score should answer: does the intended subject become easier and faster "
+            "to read than competing structures?"
+        ),
+    }
+
+
 def build_predictive_edit_plan(
     *,
     style: str,
@@ -457,20 +508,59 @@ def build_predictive_edit_plan(
     crop_dependency = "primary" if parameters and not non_crop_groups else "secondary"
 
     severity_sum = sum(float(item.get("severity", 0.0)) for item in diagnosis_items)
-    visible_difference_score = min(10.0, round(5.5 + (severity_sum * 1.2) + (len(non_crop_groups) * 0.3), 1))
-    hierarchy_improvement_score = min(
+    global_visible_difference_score = min(10.0, round(5.5 + (severity_sum * 1.2) + (len(non_crop_groups) * 0.3), 1))
+    subject_hierarchy_score = min(
         10.0,
         round(
-            5.0
-            + (1.4 if "flat_midtone_geometry" in issue_names else 0.0)
-            + (1.0 if "weak_subject_readability" in issue_names else 0.0)
-            + (0.6 if "dull_color_presence" in issue_names else 0.0),
+            4.5
+            + (0.7 if "flat_midtone_geometry" in issue_names else 0.0)
+            + (0.8 if "weak_subject_readability" in issue_names else 0.0)
+            + (0.2 if "dull_color_presence" in issue_names else 0.0)
+            + (0.2 if "low_thumbnail_impact" in issue_names else 0.0),
             1,
         ),
     )
+    thumbnail_subject_read_score = min(
+        10.0,
+        round(
+            4.5
+            + (0.7 if "low_thumbnail_impact" in issue_names else 0.0)
+            + (0.6 if "weak_subject_readability" in issue_names else 0.0)
+            + (0.4 if "flat_midtone_geometry" in issue_names else 0.0)
+            + (0.2 if "dull_color_presence" in issue_names else 0.0),
+            1,
+        ),
+    )
+    color_quality_score = min(
+        10.0,
+        round(
+            6.5
+            + (0.6 if "dull_color_presence" in issue_names else 0.0)
+            + (0.2 if "too_cool_or_clinical" in issue_names else 0.0)
+            - (0.4 if "too_warm_or_orange" in issue_names else 0.0),
+            1,
+        ),
+    )
+    naturalness_score = 8.0
+    artifact_free_score = 9.0
+
     if "proof_only_needed" in issue_names:
-        visible_difference_score = min(visible_difference_score, 6.0)
-        hierarchy_improvement_score = min(hierarchy_improvement_score, 6.0)
+        global_visible_difference_score = min(global_visible_difference_score, 5.4)
+        subject_hierarchy_score = min(subject_hierarchy_score, 5.5)
+        thumbnail_subject_read_score = min(thumbnail_subject_read_score, 5.5)
+
+    gate_decision = score_predictive_export_decision(
+        validation_allowed=True,
+        global_visible_difference_score=global_visible_difference_score,
+        subject_hierarchy_score=subject_hierarchy_score,
+        thumbnail_subject_read_score=thumbnail_subject_read_score,
+        color_quality_score=color_quality_score,
+        naturalness_score=naturalness_score,
+        artifact_free_score=artifact_free_score,
+        crop_dependency=crop_dependency,
+    )
+    hierarchy_improvement_score = subject_hierarchy_score
+    visible_difference_score = global_visible_difference_score
 
     verification = {
         "expected_effects": {
@@ -482,10 +572,10 @@ def build_predictive_edit_plan(
         },
         "artifact_check": "pass",
         "crop_dependency": crop_dependency,
-        "recommendation": "accept" if visible_difference_score >= 7.0 else "minor_correction",
+        "recommendation": "accept" if gate_decision["decision"] == "export" else gate_decision["decision"],
         "suggested_correction": (
             {"Vibrance.Pastels": "+3", "Exposure.HighlightCompr": "-3"}
-            if visible_difference_score < 7.0
+            if gate_decision["decision"] == "proof_plus"
             else {}
         ),
     }
@@ -497,10 +587,21 @@ def build_predictive_edit_plan(
         "blocked_controls_considered": blocked_controls_considered,
         "clamped": clamped,
         "scores": {
+            "global_visible_difference_score": global_visible_difference_score,
+            "subject_hierarchy_score": subject_hierarchy_score,
+            "thumbnail_subject_read_score": thumbnail_subject_read_score,
+            "color_quality_score": color_quality_score,
+            "naturalness_score": naturalness_score,
+            "artifact_free_score": artifact_free_score,
+            "crop_dependency": crop_dependency,
+            "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
+            "decision": gate_decision["decision"],
+            "export_gate_passed": gate_decision["export_gate_passed"],
+            "gate_requirements": gate_decision["gate_requirements"],
+            "scoring_guidance": gate_decision["scoring_guidance"],
+            # Backward-compatible aliases for older callers/reports.
             "visible_difference_score": visible_difference_score,
             "hierarchy_improvement_score": hierarchy_improvement_score,
-            "artifact_check": "pass",
-            "crop_dependency": crop_dependency,
         },
         "verification_contract": {
             "check": [
@@ -510,6 +611,7 @@ def build_predictive_edit_plan(
                 "no local-contrast crunch",
                 "not crop-only",
             ],
+            "scoring_guidance": gate_decision["scoring_guidance"],
             "result_template": verification,
         },
     }

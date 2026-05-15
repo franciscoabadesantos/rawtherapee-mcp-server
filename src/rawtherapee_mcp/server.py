@@ -80,6 +80,7 @@ from rawtherapee_mcp.pp3_parser import PP3Profile
 from rawtherapee_mcp.predictive_editor import (
     apply_one_step_correction,
     build_predictive_edit_plan,
+    score_predictive_export_decision,
 )
 from rawtherapee_mcp.profile_hierarchy import create_variant as _create_variant
 from rawtherapee_mcp.profile_hierarchy import list_variants as _list_variants
@@ -1283,19 +1284,75 @@ async def legacy_generate_vision_candidates(
 def _should_allow_predictive_export(
     *,
     validation_allowed: bool,
-    visible_difference_score: float,
-    hierarchy_improvement_score: float,
-    artifact_check: str,
+    global_visible_difference_score: float,
+    subject_hierarchy_score: float,
+    thumbnail_subject_read_score: float,
+    color_quality_score: float,
+    naturalness_score: float,
+    artifact_free_score: float,
     crop_dependency: str,
 ) -> bool:
     """Export gate for predictive edits."""
-    return (
-        validation_allowed
-        and visible_difference_score >= 7.0
-        and hierarchy_improvement_score >= 7.0
-        and artifact_check == "pass"
-        and crop_dependency != "primary"
+    return bool(
+        score_predictive_export_decision(
+            validation_allowed=validation_allowed,
+            global_visible_difference_score=global_visible_difference_score,
+            subject_hierarchy_score=subject_hierarchy_score,
+            thumbnail_subject_read_score=thumbnail_subject_read_score,
+            color_quality_score=color_quality_score,
+            naturalness_score=naturalness_score,
+            artifact_free_score=artifact_free_score,
+            crop_dependency=crop_dependency,
+        )["export_gate_passed"]
     )
+
+
+def _predictive_export_decision(validation_allowed: bool, scores: dict[str, Any]) -> dict[str, Any]:
+    """Normalize predictive scores and compute the export/proof decision."""
+    global_visible_difference_score = float(
+        scores.get("global_visible_difference_score", scores.get("visible_difference_score", 0.0))
+    )
+    subject_hierarchy_score = float(
+        scores.get("subject_hierarchy_score", scores.get("hierarchy_improvement_score", 0.0))
+    )
+    thumbnail_subject_read_score = float(
+        scores.get("thumbnail_subject_read_score", scores.get("hierarchy_improvement_score", 0.0))
+    )
+    color_quality_score = float(scores.get("color_quality_score", 0.0))
+    naturalness_score = float(scores.get("naturalness_score", 0.0))
+    artifact_free_score = float(
+        scores.get(
+            "artifact_free_score",
+            9.0 if str(scores.get("artifact_check", "")) == "pass" else 0.0,
+        )
+    )
+    crop_dependency = str(scores.get("crop_dependency", "unknown"))
+    decision = score_predictive_export_decision(
+        validation_allowed=validation_allowed,
+        global_visible_difference_score=global_visible_difference_score,
+        subject_hierarchy_score=subject_hierarchy_score,
+        thumbnail_subject_read_score=thumbnail_subject_read_score,
+        color_quality_score=color_quality_score,
+        naturalness_score=naturalness_score,
+        artifact_free_score=artifact_free_score,
+        crop_dependency=crop_dependency,
+    )
+    return {
+        "global_visible_difference_score": global_visible_difference_score,
+        "subject_hierarchy_score": subject_hierarchy_score,
+        "thumbnail_subject_read_score": thumbnail_subject_read_score,
+        "color_quality_score": color_quality_score,
+        "naturalness_score": naturalness_score,
+        "artifact_free_score": artifact_free_score,
+        "crop_dependency": crop_dependency,
+        "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
+        "decision": decision["decision"],
+        "export_gate_passed": decision["export_gate_passed"],
+        "gate_requirements": decision["gate_requirements"],
+        "scoring_guidance": decision["scoring_guidance"],
+        "visible_difference_score": global_visible_difference_score,
+        "hierarchy_improvement_score": subject_hierarchy_score,
+    }
 
 
 @mcp.tool()
@@ -1415,21 +1472,9 @@ async def auto_edit_predictive(
             "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
         }
 
-    scores = plan["scores"]
-    visible_difference_score = float(scores["visible_difference_score"])
-    hierarchy_improvement_score = float(scores["hierarchy_improvement_score"])
-    artifact_check = str(scores["artifact_check"])
-    crop_dependency = str(scores["crop_dependency"])
-
-    export_allowed = _should_allow_predictive_export(
-        validation_allowed=validation.allowed,
-        visible_difference_score=visible_difference_score,
-        hierarchy_improvement_score=hierarchy_improvement_score,
-        artifact_check=artifact_check,
-        crop_dependency=crop_dependency,
-    )
-
-    decision = "preview_ready"
+    normalized_scores = _predictive_export_decision(validation.allowed, plan["scores"])
+    export_allowed = bool(normalized_scores["export_gate_passed"])
+    decision = str(normalized_scores["decision"])
     output: dict[str, Any] = {
         "decision": decision,
         "raw_path": str(source_raw),
@@ -1447,13 +1492,7 @@ async def auto_edit_predictive(
         },
         "blocked_controls_considered": plan["blocked_controls_considered"],
         "verification_contract": plan["verification_contract"],
-        "scores": {
-            "visible_difference_score": visible_difference_score,
-            "hierarchy_improvement_score": hierarchy_improvement_score,
-            "artifact_check": artifact_check,
-            "crop_dependency": crop_dependency,
-            "export_gate_passed": export_allowed,
-        },
+        "scores": normalized_scores,
         "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
         "correction_applied": correction_applied,
     }
@@ -1478,11 +1517,11 @@ async def auto_edit_predictive(
                 output["decision"] = "proof_only"
                 output["export_error"] = process_result
         else:
-            output["decision"] = "proof_only"
+            output["decision"] = decision
             output["proof_only_reason"] = (
-                "Export gate failed: requires visible_difference_score>=7, "
-                "hierarchy_improvement_score>=7, artifact_check=pass, crop_dependency!=primary, "
-                "and manifest validation allowed."
+                "Export gate failed: requires subject_hierarchy_score>=7, "
+                "thumbnail_subject_read_score>=7, artifact_free_score>=8, naturalness_score>=7, "
+                "crop_dependency!=primary, and manifest validation allowed."
             )
 
     return output

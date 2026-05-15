@@ -11,6 +11,7 @@ from unittest.mock import patch
 from PIL import Image as PILImage
 
 from rawtherapee_mcp.evaluation import run_predictive_evaluation
+from rawtherapee_mcp.predictive_editor import score_predictive_export_decision
 
 
 def _load_cli_module():
@@ -56,9 +57,12 @@ class TestPredictiveEvaluation:
                 "validation": {"allowed": True, "blocked": [], "clamped": []},
                 "blocked_controls_considered": [{"control": "Local Contrast.Amount", "reason": "blocked by manifest"}],
                 "scores": {
-                    "visible_difference_score": 7.8,
-                    "hierarchy_improvement_score": 7.4,
-                    "artifact_check": "pass",
+                    "global_visible_difference_score": 7.8,
+                    "subject_hierarchy_score": 7.4,
+                    "thumbnail_subject_read_score": 7.2,
+                    "color_quality_score": 7.5,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
                     "crop_dependency": "secondary",
                     "export_gate_passed": True,
                 },
@@ -91,6 +95,9 @@ class TestPredictiveEvaluation:
         assert Path(files["report_md"]).is_file()
 
         parsed = json.loads(Path(files["report_json"]).read_text(encoding="utf-8"))
+        assert parsed["source_type"] == "jpeg"
+        assert parsed["is_raw_regression"] is False
+        assert parsed["calibration_allowed"] is False
         assert "diagnosis" in parsed
         assert "parameters" in parsed
         assert "validation" in parsed
@@ -99,6 +106,62 @@ class TestPredictiveEvaluation:
         assert checks["local_contrast_amount_emitted"] is False
         assert checks["hsv_hcurve_emitted"] is False
         assert checks["arbitrary_curves_emitted"] is False
+
+    def test_jpeg_tiff_png_eval_reports_are_not_calibration_allowed(self, tmp_path: Path) -> None:
+        source_base = tmp_path / "source_base.jpg"
+        source_pred = tmp_path / "source_pred.jpg"
+        source_profile = tmp_path / "source_profile.pp3"
+        _write_jpeg(source_base, color="blue")
+        _write_jpeg(source_pred, color="green")
+        source_profile.write_text("[Version]\nAppVersion=5.11\n", encoding="utf-8")
+
+        async def fake_preview_raw(*args, **kwargs):
+            return {"success": True, "preview_path": str(source_base)}
+
+        async def fake_auto_edit(*args, **kwargs):
+            return {
+                "decision": "proof_plus",
+                "profile_path": str(source_profile),
+                "preview_path": str(source_pred),
+                "diagnosis": {"diagnosis": []},
+                "parameters": {"exposure": {"contrast": 9}},
+                "expected_effect": [],
+                "validation": {"allowed": True, "blocked": [], "clamped": []},
+                "blocked_controls_considered": [],
+                "scores": {
+                    "global_visible_difference_score": 7.0,
+                    "subject_hierarchy_score": 6.0,
+                    "thumbnail_subject_read_score": 6.0,
+                    "color_quality_score": 7.0,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                    "crop_dependency": "secondary",
+                },
+            }
+
+        async def fake_before_after(*args, **kwargs):
+            return {"before": {"preview_path": str(source_base)}, "after": {"preview_path": str(source_pred)}}
+
+        cases = [("case.jpg", "jpeg"), ("case.tiff", "tiff"), ("case.png", "png")]
+        with (
+            patch("rawtherapee_mcp.evaluation.preview_raw", side_effect=fake_preview_raw),
+            patch("rawtherapee_mcp.evaluation.auto_edit_predictive", side_effect=fake_auto_edit),
+            patch("rawtherapee_mcp.evaluation.preview_before_after", side_effect=fake_before_after),
+        ):
+            for filename, expected_type in cases:
+                source = tmp_path / filename
+                PILImage.new("RGB", (100, 80), "white").save(source)
+                report = asyncio.run(
+                    run_predictive_evaluation(
+                        raw_path=str(source),
+                        brief="warm natural travel",
+                        intensity="medium",
+                        output_root=tmp_path / f"eval-{expected_type}",
+                    )
+                )
+                assert report["source_type"] == expected_type
+                assert report["is_raw_regression"] is False
+                assert report["calibration_allowed"] is False
 
     def test_crop_only_decision_fails_export_gate(self, tmp_path: Path) -> None:
         raw_file = tmp_path / "crop_case.jpg"
@@ -125,9 +188,12 @@ class TestPredictiveEvaluation:
                 "validation": {"allowed": True, "blocked": [], "clamped": []},
                 "blocked_controls_considered": [],
                 "scores": {
-                    "visible_difference_score": 5.5,
-                    "hierarchy_improvement_score": 5.0,
-                    "artifact_check": "pass",
+                    "global_visible_difference_score": 9.5,
+                    "subject_hierarchy_score": 8.0,
+                    "thumbnail_subject_read_score": 8.0,
+                    "color_quality_score": 8.0,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
                     "crop_dependency": "primary",
                     "export_gate_passed": False,
                 },
@@ -153,6 +219,105 @@ class TestPredictiveEvaluation:
         assert report["export_gate"]["decision"] == "proof_only"
         assert report["export_gate"]["crop_dependency"] == "primary"
         assert report["export_gate"]["export_gate_passed"] is False
+
+    def test_raw_eval_reports_are_calibration_allowed(self, tmp_path: Path) -> None:
+        raw_file = tmp_path / "IMG_1279.CR3"
+        raw_file.write_bytes(b"raw")
+
+        source_base = tmp_path / "source_base.jpg"
+        source_pred = tmp_path / "source_pred.jpg"
+        source_profile = tmp_path / "source_profile.pp3"
+        _write_jpeg(source_base, color="blue")
+        _write_jpeg(source_pred, color="green")
+        source_profile.write_text("[Version]\nAppVersion=5.11\n", encoding="utf-8")
+
+        async def fake_preview_raw(*args, **kwargs):
+            return {"success": True, "preview_path": str(source_base)}
+
+        async def fake_auto_edit(*args, **kwargs):
+            return {
+                "decision": "proof_plus",
+                "profile_path": str(source_profile),
+                "preview_path": str(source_pred),
+                "diagnosis": {"diagnosis": []},
+                "parameters": {"exposure": {"contrast": 9}},
+                "expected_effect": [],
+                "validation": {"allowed": True, "blocked": [], "clamped": []},
+                "blocked_controls_considered": [],
+                "scores": {
+                    "global_visible_difference_score": 7.0,
+                    "subject_hierarchy_score": 6.0,
+                    "thumbnail_subject_read_score": 6.0,
+                    "color_quality_score": 7.0,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                    "crop_dependency": "secondary",
+                },
+            }
+
+        async def fake_before_after(*args, **kwargs):
+            return {"before": {"preview_path": str(source_base)}, "after": {"preview_path": str(source_pred)}}
+
+        with (
+            patch("rawtherapee_mcp.evaluation.preview_raw", side_effect=fake_preview_raw),
+            patch("rawtherapee_mcp.evaluation.auto_edit_predictive", side_effect=fake_auto_edit),
+            patch("rawtherapee_mcp.evaluation.preview_before_after", side_effect=fake_before_after),
+        ):
+            report = asyncio.run(
+                run_predictive_evaluation(
+                    raw_path=str(raw_file),
+                    brief="warm natural travel",
+                    intensity="medium",
+                    output_root=tmp_path / "eval",
+                )
+            )
+
+        assert report["source_type"] == "raw"
+        assert report["is_raw_regression"] is True
+        assert report["calibration_allowed"] is True
+        assert report["export_gate"]["decision"] == "proof_plus"
+
+    def test_global_visible_difference_alone_cannot_pass_export_gate(self) -> None:
+        result = score_predictive_export_decision(
+            validation_allowed=True,
+            global_visible_difference_score=9.8,
+            subject_hierarchy_score=6.0,
+            thumbnail_subject_read_score=8.0,
+            color_quality_score=8.0,
+            naturalness_score=8.0,
+            artifact_free_score=9.0,
+            crop_dependency="secondary",
+        )
+        assert result["export_gate_passed"] is False
+        assert result["decision"] == "proof_plus"
+
+    def test_img_1279_style_scores_return_proof_plus(self) -> None:
+        result = score_predictive_export_decision(
+            validation_allowed=True,
+            global_visible_difference_score=7.0,
+            subject_hierarchy_score=6.0,
+            thumbnail_subject_read_score=6.0,
+            color_quality_score=7.0,
+            naturalness_score=8.0,
+            artifact_free_score=8.0,
+            crop_dependency="none",
+        )
+        assert result["export_gate_passed"] is False
+        assert result["decision"] == "proof_plus"
+
+    def test_crop_primary_blocks_export_even_with_high_global_difference(self) -> None:
+        result = score_predictive_export_decision(
+            validation_allowed=True,
+            global_visible_difference_score=10.0,
+            subject_hierarchy_score=9.0,
+            thumbnail_subject_read_score=9.0,
+            color_quality_score=9.0,
+            naturalness_score=9.0,
+            artifact_free_score=9.0,
+            crop_dependency="primary",
+        )
+        assert result["export_gate_passed"] is False
+        assert result["decision"] == "proof_only"
 
     def test_cli_script_exits_cleanly_with_mocked_runner(self, monkeypatch) -> None:
         module = _load_cli_module()

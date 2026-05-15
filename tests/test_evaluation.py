@@ -54,6 +54,10 @@ class TestPredictiveEvaluation:
                     "vibrance": {"enabled": True, "pastels": 8, "saturated": 2},
                 },
                 "expected_effect": ["color presence should improve naturally"],
+                "planned_scores": {
+                    "expected_global_change": 8.0,
+                    "expected_subject_hierarchy": 6.5,
+                },
                 "approved_curves_used": [
                     {
                         "id": "tone_curve.midtone_pop_v1",
@@ -61,6 +65,25 @@ class TestPredictiveEvaluation:
                         "risk": "may increase harshness; checked by export gate",
                     }
                 ],
+                "decision_source": "visual_verification",
+                "visual_verification_scores": {
+                    "global_visible_difference_score": 7.8,
+                    "global_pixel_difference": 7.8,
+                    "subject_hierarchy_score": 7.4,
+                    "thumbnail_subject_read_score": 7.2,
+                    "color_quality_score": 7.5,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                    "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 7.2,
+                    "subject_separation_improvement": 7.4,
+                    "color_intent_improvement": 7.3,
+                    "highlight_shadow_quality": 6.6,
+                    "composition_improvement": 5.0,
+                    "crop_contribution": 3.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "reason": "Observed before/after separation and color presence improve clearly.",
+                },
                 "validation": {"allowed": True, "blocked": [], "clamped": []},
                 "blocked_controls_considered": [{"control": "Local Contrast.Amount", "reason": "blocked by manifest"}],
                 "scores": {
@@ -117,6 +140,9 @@ class TestPredictiveEvaluation:
         assert "parameters" in parsed
         assert "validation" in parsed
         assert "export_gate" in parsed
+        assert parsed["decision_source"] == "visual_verification"
+        assert parsed["planned_scores"]["expected_global_change"] == 8.0
+        assert parsed["visual_verification_scores"]["subject_separation_improvement"] == 7.4
         assert parsed["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
         checks = parsed["failure_mode_checks"]
         assert checks["local_contrast_amount_emitted"] is False
@@ -427,9 +453,11 @@ class TestPredictiveEvaluation:
                 "diagnosis": {"diagnosis": []},
                 "parameters": {"exposure": {"contrast": 9}},
                 "expected_effect": [],
+                "planned_scores": {"expected_global_change": 7.0, "expected_subject_hierarchy": 6.0},
+                "decision_source": "visual_verification",
                 "validation": {"allowed": True, "blocked": [], "clamped": []},
                 "blocked_controls_considered": [],
-                "scores": {
+                "visual_verification_scores": {
                     "global_visible_difference_score": 7.0,
                     "global_pixel_difference": 7.0,
                     "subject_hierarchy_score": 6.0,
@@ -445,6 +473,7 @@ class TestPredictiveEvaluation:
                     "composition_improvement": 4.0,
                     "crop_contribution": 2.0,
                     "perceived_non_crop_improvement": "weak",
+                    "reason": "Tonal/color changes are visible but do not materially improve subject separation.",
                 },
             }
 
@@ -466,8 +495,97 @@ class TestPredictiveEvaluation:
             )
 
         markdown = Path(report["files"]["report_md"]).read_text(encoding="utf-8")
+        assert "## Planner Expected" in markdown
+        assert "## Visual Verification Observed" in markdown
+        assert "- Decision source: visual_verification" in markdown
         assert "Non-crop edit quality: fail" in markdown
         assert "Reason:" in markdown
+
+    def test_visual_verification_scores_drive_final_decision(self, tmp_path: Path) -> None:
+        raw_file = tmp_path / "IMG_1279.jpg"
+        _write_jpeg(raw_file, color="white")
+        source_base = tmp_path / "source_base.jpg"
+        source_pred = tmp_path / "source_pred.jpg"
+        source_profile = tmp_path / "source_profile.pp3"
+        _write_jpeg(source_base, color="blue")
+        _write_jpeg(source_pred, color="green")
+        source_profile.write_text("[Version]\nAppVersion=5.11\n", encoding="utf-8")
+
+        async def fake_preview_raw(*args, **kwargs):
+            return {"success": True, "preview_path": str(source_base)}
+
+        async def fake_auto_edit(*args, **kwargs):
+            return {
+                "decision": "proof_plus",
+                "decision_source": "visual_verification",
+                "profile_path": str(source_profile),
+                "preview_path": str(source_pred),
+                "diagnosis": {"diagnosis": []},
+                "parameters": {"exposure": {"contrast": 9}},
+                "expected_effect": [],
+                "planned_scores": {"expected_global_change": 9.0, "expected_subject_hierarchy": 8.0},
+                "validation": {"allowed": True, "blocked": [], "clamped": []},
+                "blocked_controls_considered": [],
+                "visual_verification_scores": {
+                    "global_visible_difference_score": 7.4,
+                    "global_pixel_difference": 7.4,
+                    "subject_hierarchy_score": 7.4,
+                    "thumbnail_subject_read_score": 6.8,
+                    "color_quality_score": 7.3,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                    "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 7.1,
+                    "subject_separation_improvement": 7.4,
+                    "color_intent_improvement": 7.2,
+                    "highlight_shadow_quality": 6.8,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "reason": "Observed non-crop improvement is clearly meaningful.",
+                },
+            }
+
+        async def fake_before_after(*args, **kwargs):
+            return {"before": {"preview_path": str(source_base)}, "after": {"preview_path": str(source_pred)}}
+
+        with (
+            patch("rawtherapee_mcp.evaluation.preview_raw", side_effect=fake_preview_raw),
+            patch("rawtherapee_mcp.evaluation.auto_edit_predictive", side_effect=fake_auto_edit),
+            patch("rawtherapee_mcp.evaluation.preview_before_after", side_effect=fake_before_after),
+        ):
+            report = asyncio.run(
+                run_predictive_evaluation(
+                    raw_path=str(raw_file),
+                    brief="warm natural travel",
+                    intensity="medium",
+                    output_root=tmp_path / "eval-observed",
+                )
+            )
+
+        assert report["decision_source"] == "visual_verification"
+        assert report["export_gate"]["decision"] == "proof_plus"
+
+    def test_perceived_non_crop_improvement_weak_blocks_export_and_proof_plus(self) -> None:
+        result = score_predictive_export_decision(
+            validation_allowed=True,
+            global_visible_difference_score=9.0,
+            subject_hierarchy_score=7.6,
+            thumbnail_subject_read_score=7.5,
+            color_quality_score=7.7,
+            naturalness_score=8.0,
+            artifact_free_score=9.0,
+            crop_dependency="secondary",
+            global_pixel_difference=9.0,
+            non_crop_tonal_improvement=7.2,
+            subject_separation_improvement=7.6,
+            color_intent_improvement=7.4,
+            highlight_shadow_quality=7.0,
+            composition_improvement=4.0,
+            crop_contribution=2.0,
+            perceived_non_crop_improvement="weak",
+        )
+        assert result["decision"] == "proof_only"
 
     def test_perceived_non_crop_improvement_is_included_in_report_parsing(self, tmp_path: Path) -> None:
         csv_path = tmp_path / "scores.csv"

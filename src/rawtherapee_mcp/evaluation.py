@@ -190,6 +190,48 @@ def _decision_from_scores(scores: dict[str, Any], validation: dict[str, Any]) ->
     }
 
 
+def _human_score_to_visual_verification(human_scores: dict[str, Any] | None) -> dict[str, Any] | None:
+    if human_scores is None:
+        return None
+
+    def _num(key: str, default: float) -> float:
+        value = human_scores.get(key, default)
+        return float(value) if isinstance(value, (int, float)) else default
+
+    crop_dependency = str(human_scores.get("crop_dependency", "secondary"))
+    crop_contribution = _num(
+        "crop_contribution",
+        8.0 if crop_dependency == "primary" else (2.0 if crop_dependency == "none" else 5.0),
+    )
+    subject_separation = _num("subject_separation_improvement", _num("hierarchy_improvement", 0.0))
+    return {
+        "subject": "primary subject",
+        "before_after_judgment": {
+            "global_pixel_difference": _num("global_pixel_difference", _num("visible_difference", 0.0)),
+            "non_crop_tonal_improvement": _num(
+                "non_crop_tonal_improvement",
+                max(0.0, subject_separation - 0.7),
+            ),
+            "subject_separation_improvement": subject_separation,
+            "color_intent_improvement": _num("color_intent_improvement", _num("color_quality", 0.0)),
+            "highlight_shadow_quality": _num("highlight_shadow_quality", min(_num("naturalness", 0.0), 6.0)),
+            "composition_improvement": _num(
+                "composition_improvement",
+                4.0 if crop_dependency == "none" else (8.0 if crop_dependency == "primary" else 5.5),
+            ),
+            "crop_contribution": crop_contribution,
+            "perceived_non_crop_improvement": str(human_scores.get("perceived_non_crop_improvement", "weak")),
+            "artifact_check": "pass" if _num("artifact_free", 0.0) >= 8.0 else "fail",
+            "artifact_free_score": _num("artifact_free", 0.0),
+            "naturalness_score": _num("naturalness", 0.0),
+            "subject_hierarchy_score": subject_separation,
+            "thumbnail_subject_read_score": _num("thumbnail_subject_read_score", subject_separation),
+            "color_quality_score": _num("color_quality", 0.0),
+            "reason": str(human_scores.get("notes", "Human visual verification row.")),
+        },
+    }
+
+
 def _maybe_number(value: str) -> float | str:
     try:
         return float(value)
@@ -278,6 +320,13 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
     lines.append(json.dumps(report.get("parameters", {}), indent=2))
     lines.append("```")
     lines.append("")
+    lines.append("## Planner Expected")
+    planned_scores = report.get("planned_scores", {})
+    if isinstance(planned_scores, dict):
+        lines.append("```json")
+        lines.append(json.dumps(planned_scores, indent=2))
+        lines.append("```")
+        lines.append("")
     lines.append("## Expected Effects")
     for effect in report.get("expected_effect", []):
         lines.append(f"- {effect}")
@@ -294,17 +343,23 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
     lines.append(json.dumps(report.get("validation", {}), indent=2))
     lines.append("```")
     lines.append("")
-    lines.append("## Export Gate")
+    lines.append("## Visual Verification Observed")
     lines.append("```json")
-    lines.append(json.dumps(report.get("export_gate", {}), indent=2))
+    lines.append(json.dumps(report.get("visual_verification_scores", {}), indent=2))
     lines.append("```")
-    non_crop_quality = report.get("export_gate", {})
+    lines.append(f"- Decision source: {report.get('decision_source', 'visual_verification_pending')}")
+    non_crop_quality = report.get("visual_verification_scores", {})
     if isinstance(non_crop_quality, dict):
         lines.append("")
         lines.append(
             f"Non-crop edit quality: {non_crop_quality.get('non_crop_edit_quality', 'fail')}"
         )
         lines.append(f"Reason: {non_crop_quality.get('non_crop_edit_quality_reason', 'Unavailable.')}")
+    lines.append("")
+    lines.append("## Export Gate")
+    lines.append("```json")
+    lines.append(json.dumps(report.get("export_gate", {}), indent=2))
+    lines.append("```")
     comparison = report.get("manual_score_comparison")
     if isinstance(comparison, dict):
         lines.append("")
@@ -360,6 +415,9 @@ async def run_predictive_evaluation(
     base_preview_out = run_dir / "base_preview.jpg"
     base_preview_path = _copy_existing(base_payload.get("preview_path"), base_preview_out)
 
+    human_scores = _load_human_score(source, brief, intensity)
+    visual_verification_feedback = _human_score_to_visual_verification(human_scores)
+
     predictive_result = await auto_edit_predictive(
         ctx,
         raw_path=str(source),
@@ -368,6 +426,7 @@ async def run_predictive_evaluation(
         user_brief=brief,
         export=export,
         preview_width=preview_width,
+        verification_feedback=visual_verification_feedback,
     )
     if "error" in predictive_result:
         return {"error": "auto_edit_predictive failed", "details": predictive_result}
@@ -395,7 +454,10 @@ async def run_predictive_evaluation(
     parameters = predictive_result.get("parameters", {})
     if not isinstance(parameters, dict):
         parameters = {}
-    scores = predictive_result.get("scores", {})
+    planned_scores = predictive_result.get("planned_scores", {})
+    if not isinstance(planned_scores, dict):
+        planned_scores = {}
+    scores = predictive_result.get("visual_verification_scores", predictive_result.get("scores", {}))
     if not isinstance(scores, dict):
         scores = {}
     validation = predictive_result.get("validation", {})
@@ -409,6 +471,7 @@ async def run_predictive_evaluation(
     export_gate = _decision_from_scores(scores, validation)
     export_gate["export_requested"] = export
     export_gate["runtime_decision"] = predictive_result.get("decision")
+    export_gate["decision_source"] = predictive_result.get("decision_source", "visual_verification_pending")
     manual_score_comparison = _manual_score_comparison(
         source=source,
         brief=brief,
@@ -428,6 +491,9 @@ async def run_predictive_evaluation(
         "diagnosis": predictive_result.get("diagnosis", {}).get("diagnosis", []),
         "parameters": parameters,
         "expected_effect": predictive_result.get("expected_effect", []),
+        "planned_scores": planned_scores,
+        "visual_verification_scores": scores,
+        "decision_source": predictive_result.get("decision_source", "visual_verification_pending"),
         "approved_curves_used": predictive_result.get("approved_curves_used", []),
         "validation": validation,
         "blocked_controls_considered": predictive_result.get("blocked_controls_considered", []),

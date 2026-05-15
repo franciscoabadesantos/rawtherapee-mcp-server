@@ -382,9 +382,11 @@ class TestEditorialWorkflowTools:
             )
 
         assert "error" not in result
-        assert result["decision"] in {"proof_only", "failed_edit_quality", "proof_plus", "export"}
+        assert result["decision"] in {"proof_only", "failed_edit_quality"}
+        assert result["decision_source"] == "visual_verification_pending"
         assert result["validation"]["allowed"] is True
-        assert "perceived_non_crop_improvement" in result["scores"]
+        assert "perceived_non_crop_improvement" in result["visual_verification_scores"]
+        assert "expected_global_change" in result["planned_scores"]
         assert "local_contrast" not in result["parameters"]
         assert result["parameters"]["tone_curve"]["curve_mode"] == "Standard"
         assert result["parameters"]["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
@@ -495,7 +497,7 @@ class TestEditorialWorkflowTools:
         )
 
         params = plan["parameters"]
-        assert plan["scores"]["hierarchy_boost_applied"] is True
+        assert plan["planned_scores"]["hierarchy_boost_applied"] is True
         assert params["exposure"]["contrast"] >= 11
         assert params["exposure"]["compensation"] >= 0.3
         assert params["luminance_curve"]["contrast"] >= 8
@@ -525,7 +527,7 @@ class TestEditorialWorkflowTools:
             },
         )
 
-        assert plan["scores"]["hierarchy_boost_applied"] is False
+        assert plan["planned_scores"]["hierarchy_boost_applied"] is False
         assert "tone_curve" not in plan["parameters"]
         assert plan["approved_curves_used"] == []
 
@@ -659,7 +661,8 @@ class TestEditorialWorkflowTools:
             result = await auto_edit_predictive(mock_ctx, str(raw_file), export=False)
 
         assert "error" not in result
-        assert result["decision"] in {"proof_only", "failed_edit_quality", "proof_plus", "export"}
+        assert result["decision"] in {"proof_only", "failed_edit_quality"}
+        assert result["decision_source"] == "visual_verification_pending"
 
     async def test_auto_edit_predictive_export_gate_rejects_weak_or_crop_primary(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -684,7 +687,7 @@ class TestEditorialWorkflowTools:
             )
 
         assert result["decision"] == "proof_only"
-        assert result["scores"]["export_gate_passed"] is False
+        assert result["visual_verification_scores"]["export_gate_passed"] is False
 
     async def test_auto_edit_predictive_reports_approved_curve_usage(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -717,6 +720,111 @@ class TestEditorialWorkflowTools:
         assert result["approved_curves_used"]
         assert result["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
         assert result["parameters"]["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
+
+    async def test_planner_scores_alone_cannot_produce_export_or_proof_plus(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                style="warm natural travel",
+                intensity="medium",
+                user_brief="Barcelona tram travel frame",
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "medium",
+                    "diagnosis": [
+                        {"issue": "flat_midtone_geometry", "severity": 0.8, "evidence": "flat rails"},
+                        {"issue": "weak_subject_readability", "severity": 0.8, "evidence": "weak subject"},
+                        {"issue": "low_thumbnail_impact", "severity": 0.7, "evidence": "weak thumbnail"},
+                    ],
+                    "crop_need": "low",
+                },
+            )
+
+        assert result["planned_scores"]["expected_subject_hierarchy"] >= 6.0
+        assert result["decision"] in {"proof_only", "failed_edit_quality"}
+        assert result["decision_source"] == "visual_verification_pending"
+
+    async def test_visual_verification_scores_drive_final_decision(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                verification_feedback={
+                    "subject": "tram",
+                    "before_after_judgment": {
+                        "global_pixel_difference": 7.5,
+                        "non_crop_tonal_improvement": 7.4,
+                        "subject_separation_improvement": 7.6,
+                        "color_intent_improvement": 7.2,
+                        "highlight_shadow_quality": 6.8,
+                        "composition_improvement": 4.0,
+                        "crop_contribution": 2.0,
+                        "perceived_non_crop_improvement": "moderate",
+                        "artifact_check": "pass",
+                        "artifact_free_score": 9.0,
+                        "naturalness_score": 8.0,
+                        "thumbnail_subject_read_score": 7.3,
+                        "reason": "Tram separates more clearly and color presence is stronger before crop.",
+                    },
+                },
+            )
+
+        assert result["decision"] in {"proof_plus", "export"}
+        assert result["decision_source"] == "visual_verification"
+        assert result["visual_verification_scores"]["subject_separation_improvement"] == 7.6
+
+    async def test_perceived_non_crop_improvement_weak_blocks_proof_plus_and_export(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                verification_feedback={
+                    "subject": "tram",
+                    "before_after_judgment": {
+                        "global_pixel_difference": 9.0,
+                        "non_crop_tonal_improvement": 7.5,
+                        "subject_separation_improvement": 7.6,
+                        "color_intent_improvement": 7.4,
+                        "highlight_shadow_quality": 7.1,
+                        "composition_improvement": 4.0,
+                        "crop_contribution": 2.0,
+                        "perceived_non_crop_improvement": "weak",
+                        "artifact_check": "pass",
+                        "artifact_free_score": 9.0,
+                        "naturalness_score": 8.0,
+                        "thumbnail_subject_read_score": 7.4,
+                        "reason": "Numeric improvement exists, but the perceived change is still weak.",
+                    },
+                },
+            )
+
+        assert result["decision"] == "proof_only"
+        assert result["decision_source"] == "visual_verification"
 
     async def test_generate_crop_candidates_returns_safe_crop_only_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

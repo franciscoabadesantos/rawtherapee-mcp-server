@@ -636,6 +636,7 @@ def score_predictive_export_decision(
     export_gate_passed = (
         validation_allowed
         and non_crop_quality_passed
+        and normalized_perceived not in {"none", "weak"}
         and subject_hierarchy_score >= EXPORT_SCORE_MINIMUMS["subject_hierarchy_score"]
         and thumbnail_subject_read_score >= EXPORT_SCORE_MINIMUMS["thumbnail_subject_read_score"]
         and artifact_free_score >= EXPORT_SCORE_MINIMUMS["artifact_free_score"]
@@ -695,6 +696,96 @@ def score_predictive_export_decision(
             "to read than competing structures?"
         ),
     }
+
+
+def normalize_visual_verification_feedback(
+    verification_feedback: dict[str, Any] | None,
+    *,
+    planned_scores: dict[str, Any],
+    crop_dependency: str,
+) -> tuple[dict[str, Any], str]:
+    """Normalize observed before/after judgment into decision-driving scores."""
+    if verification_feedback and isinstance(verification_feedback, dict):
+        raw_judgment = verification_feedback.get("before_after_judgment")
+        if not isinstance(raw_judgment, dict):
+            raw_judgment = verification_feedback.get("visual_verification_scores")
+        if not isinstance(raw_judgment, dict):
+            raw_judgment = verification_feedback
+    else:
+        raw_judgment = {}
+
+    has_explicit_visual_verification = any(
+        key in raw_judgment
+        for key in (
+            "subject_separation_improvement",
+            "non_crop_tonal_improvement",
+            "color_intent_improvement",
+            "highlight_shadow_quality",
+            "perceived_non_crop_improvement",
+            "reason",
+        )
+    )
+    decision_source = "visual_verification" if has_explicit_visual_verification else "visual_verification_pending"
+
+    subject_separation_improvement = float(raw_judgment.get("subject_separation_improvement", 0.0))
+    non_crop_tonal_improvement = float(raw_judgment.get("non_crop_tonal_improvement", 0.0))
+    color_intent_improvement = float(raw_judgment.get("color_intent_improvement", 0.0))
+    highlight_shadow_quality = float(raw_judgment.get("highlight_shadow_quality", 0.0))
+    composition_improvement = float(raw_judgment.get("composition_improvement", 0.0))
+    crop_contribution = float(raw_judgment.get("crop_contribution", 0.0))
+    global_pixel_difference = float(
+        raw_judgment.get(
+            "global_pixel_difference",
+            planned_scores.get("expected_global_change", 0.0) if not has_explicit_visual_verification else 0.0,
+        )
+    )
+    perceived_non_crop_improvement = str(
+        raw_judgment.get(
+            "perceived_non_crop_improvement",
+            "none" if not has_explicit_visual_verification else "weak",
+        )
+    )
+    artifact_check = str(raw_judgment.get("artifact_check", "pass"))
+    artifact_free_score = float(raw_judgment.get("artifact_free_score", 9.0 if artifact_check == "pass" else 0.0))
+    naturalness_score = float(raw_judgment.get("naturalness_score", 8.0 if artifact_check == "pass" else 0.0))
+    subject_hierarchy_score = float(raw_judgment.get("subject_hierarchy_score", subject_separation_improvement))
+    thumbnail_subject_read_score = float(
+        raw_judgment.get("thumbnail_subject_read_score", subject_separation_improvement)
+    )
+    color_quality_score = float(raw_judgment.get("color_quality_score", color_intent_improvement))
+    reason = str(
+        raw_judgment.get(
+            "reason",
+            (
+                "Visual verification not provided yet; planner expectations cannot justify a meaningful edit decision."
+                if not has_explicit_visual_verification
+                else "Visual verification completed."
+            ),
+        )
+    )
+
+    observed_scores = {
+        "global_visible_difference_score": global_pixel_difference,
+        "global_pixel_difference": global_pixel_difference,
+        "subject_hierarchy_score": subject_hierarchy_score,
+        "thumbnail_subject_read_score": thumbnail_subject_read_score,
+        "color_quality_score": color_quality_score,
+        "naturalness_score": naturalness_score,
+        "artifact_free_score": artifact_free_score,
+        "artifact_check": artifact_check,
+        "crop_dependency": crop_dependency,
+        "non_crop_tonal_improvement": non_crop_tonal_improvement,
+        "subject_separation_improvement": subject_separation_improvement,
+        "color_intent_improvement": color_intent_improvement,
+        "highlight_shadow_quality": highlight_shadow_quality,
+        "composition_improvement": composition_improvement,
+        "crop_contribution": crop_contribution,
+        "perceived_non_crop_improvement": perceived_non_crop_improvement,
+        "reason": reason,
+        "visible_difference_score": global_pixel_difference,
+        "hierarchy_improvement_score": subject_hierarchy_score,
+    }
+    return observed_scores, decision_source
 
 
 def build_predictive_edit_plan(
@@ -763,7 +854,7 @@ def build_predictive_edit_plan(
     crop_dependency = "primary" if parameters and not non_crop_groups else "secondary"
 
     severity_sum = sum(float(item.get("severity", 0.0)) for item in diagnosis_items)
-    global_visible_difference_score = _clamp_score(5.5 + (severity_sum * 1.2) + (len(non_crop_groups) * 0.3))
+    expected_global_change = _clamp_score(5.5 + (severity_sum * 1.2) + (len(non_crop_groups) * 0.3))
     subject_separation_improvement = _clamp_score(
         4.2
         + (1.1 if "flat_midtone_geometry" in issue_names else 0.0)
@@ -802,64 +893,60 @@ def build_predictive_edit_plan(
         + (2.8 if "crop_distraction_edges" in issue_names else 0.0)
         + (1.2 if "needs_mild_straightening_or_geometry" in issue_names else 0.0)
     )
-    subject_hierarchy_score = _clamp_score(subject_separation_improvement)
-    thumbnail_subject_read_score = _clamp_score(
+    expected_subject_hierarchy = _clamp_score(subject_separation_improvement)
+    expected_thumbnail_subject_read = _clamp_score(
         4.4
         + (0.8 if "low_thumbnail_impact" in issue_names else 0.0)
         + (0.7 if "weak_subject_readability" in issue_names else 0.0)
         + (0.5 if "flat_midtone_geometry" in issue_names else 0.0)
         + (0.2 if "dull_color_presence" in issue_names else 0.0)
     )
-    color_quality_score = _clamp_score(color_intent_improvement + 0.4)
-    naturalness_score = 8.0
-    artifact_free_score = 9.0
+    expected_color_quality = _clamp_score(color_intent_improvement + 0.4)
+    expected_naturalness = 8.0
+    expected_artifact_free = 9.0
 
     if "proof_only_needed" in issue_names:
-        global_visible_difference_score = min(global_visible_difference_score, 5.4)
-        subject_hierarchy_score = min(subject_hierarchy_score, 5.5)
-        thumbnail_subject_read_score = min(thumbnail_subject_read_score, 5.5)
+        expected_global_change = min(expected_global_change, 5.4)
+        expected_subject_hierarchy = min(expected_subject_hierarchy, 5.5)
+        expected_thumbnail_subject_read = min(expected_thumbnail_subject_read, 5.5)
         subject_separation_improvement = min(subject_separation_improvement, 5.5)
         non_crop_tonal_improvement = min(non_crop_tonal_improvement, 5.5)
         color_intent_improvement = min(color_intent_improvement, 5.5)
         highlight_shadow_quality = min(highlight_shadow_quality, 5.5)
 
-    quality_seed = score_predictive_export_decision(
-        validation_allowed=True,
-        global_visible_difference_score=global_visible_difference_score,
-        subject_hierarchy_score=subject_hierarchy_score,
-        thumbnail_subject_read_score=thumbnail_subject_read_score,
-        color_quality_score=color_quality_score,
-        naturalness_score=naturalness_score,
-        artifact_free_score=artifact_free_score,
-        crop_dependency=crop_dependency,
-        global_pixel_difference=global_visible_difference_score,
-        non_crop_tonal_improvement=non_crop_tonal_improvement,
-        subject_separation_improvement=subject_separation_improvement,
-        color_intent_improvement=color_intent_improvement,
-        highlight_shadow_quality=highlight_shadow_quality,
-        composition_improvement=composition_improvement,
-        crop_contribution=crop_contribution,
-    )
-    gate_decision = quality_seed
-    hierarchy_improvement_score = subject_hierarchy_score
-    visible_difference_score = global_visible_difference_score
-
     verification = {
-        "expected_effects": {
-            "subject readability improved": "pending_visual_review",
-            "thumbnail impact improved": "pending_visual_review",
-            "sky remains believable": "pending_visual_review",
-            "no local-contrast crunch": "pass",
-            "not crop-only": "pass" if crop_dependency != "primary" else "fail",
+        "subject": "primary subject",
+        "before_after_judgment": {
+            "global_pixel_difference": "0-10 after preview comparison",
+            "non_crop_tonal_improvement": 0,
+            "subject_separation_improvement": 0,
+            "color_intent_improvement": 0,
+            "highlight_shadow_quality": 0,
+            "composition_improvement": 0,
+            "crop_contribution": 0,
+            "perceived_non_crop_improvement": "none|weak|moderate|strong",
+            "artifact_check": "pass|fail",
+            "reason": "What actually improved in the rendered before/after?",
         },
-        "artifact_check": "pass",
+    }
+
+    planned_scores = {
+        "expected_global_change": expected_global_change,
+        "expected_subject_hierarchy": expected_subject_hierarchy,
+        "expected_thumbnail_subject_read": expected_thumbnail_subject_read,
+        "expected_color_quality": expected_color_quality,
+        "expected_non_crop_tonal_improvement": non_crop_tonal_improvement,
+        "expected_subject_separation_improvement": subject_separation_improvement,
+        "expected_color_intent_improvement": color_intent_improvement,
+        "expected_highlight_shadow_quality": highlight_shadow_quality,
+        "expected_composition_improvement": composition_improvement,
+        "expected_crop_contribution": crop_contribution,
+        "expected_naturalness": expected_naturalness,
+        "expected_artifact_free": expected_artifact_free,
         "crop_dependency": crop_dependency,
-        "recommendation": "accept" if gate_decision["decision"] == "export" else gate_decision["decision"],
-        "suggested_correction": (
-            {"Vibrance.Pastels": "+3", "Exposure.HighlightCompr": "-3"}
-            if gate_decision["decision"] == "proof_plus"
-            else {}
-        ),
+        "hierarchy_boost_applied": hierarchy_boost_applied,
+        "visible_difference_score": expected_global_change,
+        "hierarchy_improvement_score": expected_subject_hierarchy,
     }
 
     return {
@@ -869,45 +956,14 @@ def build_predictive_edit_plan(
         "blocked_controls_considered": blocked_controls_considered,
         "approved_curves_used": approved_curves_used,
         "clamped": clamped,
-        "scores": {
-            "global_visible_difference_score": global_visible_difference_score,
-            "global_pixel_difference": global_visible_difference_score,
-            "subject_hierarchy_score": subject_hierarchy_score,
-            "thumbnail_subject_read_score": thumbnail_subject_read_score,
-            "color_quality_score": color_quality_score,
-            "naturalness_score": naturalness_score,
-            "artifact_free_score": artifact_free_score,
-            "crop_dependency": crop_dependency,
-            "non_crop_tonal_improvement": non_crop_tonal_improvement,
-            "subject_separation_improvement": subject_separation_improvement,
-            "color_intent_improvement": color_intent_improvement,
-            "highlight_shadow_quality": highlight_shadow_quality,
-            "composition_improvement": composition_improvement,
-            "crop_contribution": crop_contribution,
-            "perceived_non_crop_improvement": gate_decision["perceived_non_crop_improvement"],
-            "meaningful_non_crop_edit": gate_decision["meaningful_non_crop_edit"],
-            "non_crop_edit_quality": gate_decision["non_crop_edit_quality"],
-            "non_crop_edit_quality_reason": gate_decision["non_crop_edit_quality_reason"],
-            "approved_curves_used": approved_curves_used,
-            "hierarchy_boost_applied": hierarchy_boost_applied,
-            "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
-            "decision": gate_decision["decision"],
-            "export_gate_passed": gate_decision["export_gate_passed"],
-            "gate_requirements": gate_decision["gate_requirements"],
-            "scoring_guidance": gate_decision["scoring_guidance"],
-            # Backward-compatible aliases for older callers/reports.
-            "visible_difference_score": visible_difference_score,
-            "hierarchy_improvement_score": hierarchy_improvement_score,
-        },
+        "planned_scores": planned_scores,
         "verification_contract": {
-            "check": [
-                "subject readability improved",
-                "thumbnail impact improved",
-                "sky remains believable",
-                "no local-contrast crunch",
-                "not crop-only",
-            ],
-            "scoring_guidance": gate_decision["scoring_guidance"],
+            "decision_source_required": "visual_verification",
+            "check": ["base preview", "predictive preview", "before/after composite"],
+            "scoring_guidance": (
+                "Judge the rendered previews, not the planner intent. Final decision must use observed "
+                "before/after improvement."
+            ),
             "hierarchy_boost_applied": hierarchy_boost_applied,
             "result_template": verification,
         },

@@ -80,6 +80,7 @@ from rawtherapee_mcp.pp3_parser import PP3Profile
 from rawtherapee_mcp.predictive_editor import (
     apply_one_step_correction,
     build_predictive_edit_plan,
+    normalize_visual_verification_feedback,
     score_predictive_export_decision,
 )
 from rawtherapee_mcp.profile_hierarchy import create_variant as _create_variant
@@ -1500,19 +1501,35 @@ async def auto_edit_predictive(
             "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
         }
 
-    normalized_scores = _predictive_export_decision(validation.allowed, plan["scores"])
+    base_preview_result = await _render_preview(
+        config,
+        source_raw,
+        PP3Profile(),
+        max_width=preview_width,
+        label="predictive_base",
+    )
+    visual_verification_scores, decision_source = normalize_visual_verification_feedback(
+        verification_feedback,
+        planned_scores=plan["planned_scores"],
+        crop_dependency=str(plan["planned_scores"].get("crop_dependency", "unknown")),
+    )
+    normalized_scores = _predictive_export_decision(validation.allowed, visual_verification_scores)
+    normalized_scores["reason"] = visual_verification_scores.get("reason", "")
     export_allowed = bool(normalized_scores["export_gate_passed"])
     decision = str(normalized_scores["decision"])
     output: dict[str, Any] = {
         "decision": decision,
+        "decision_source": decision_source,
         "raw_path": str(source_raw),
         "profile_path": str(profile_path),
         "preview_path": preview_result.get("preview_path"),
+        "base_preview_path": base_preview_result.get("preview_path"),
         "style": style,
         "intensity": intensity,
         "diagnosis": plan["diagnosis"],
         "parameters": parameters,
         "expected_effect": plan["expected_effect"],
+        "planned_scores": plan["planned_scores"],
         "validation": {
             "allowed": True,
             "blocked": [],
@@ -1521,6 +1538,7 @@ async def auto_edit_predictive(
         "blocked_controls_considered": plan["blocked_controls_considered"],
         "approved_curves_used": plan.get("approved_curves_used", []),
         "verification_contract": plan["verification_contract"],
+        "visual_verification_scores": normalized_scores,
         "scores": normalized_scores,
         "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",
         "correction_applied": correction_applied,

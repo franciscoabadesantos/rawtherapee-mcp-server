@@ -76,6 +76,23 @@ def _structured_payload(result: dict[str, Any] | ToolResult) -> dict[str, Any]:
     return result
 
 
+def _tool_image_metadata(result: dict[str, Any] | ToolResult) -> dict[str, Any]:
+    if not isinstance(result, ToolResult):
+        return {
+            "attachment_available": False,
+            "image_count": 0,
+            "content_types": [],
+        }
+    content = result.content or []
+    content_types = [getattr(item, "type", "unknown") for item in content]
+    image_count = sum(1 for item in content if getattr(item, "type", None) == "image")
+    return {
+        "attachment_available": image_count > 0,
+        "image_count": image_count,
+        "content_types": content_types,
+    }
+
+
 def _copy_existing(src: str | None, dst: Path) -> str | None:
     if not src:
         return None
@@ -344,6 +361,11 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
         if isinstance(item, dict):
             lines.append(f"- {item.get('issue')} (severity={item.get('severity')}): {item.get('evidence')}")
     lines.append("")
+    lines.append("## Planner / Prepare Output")
+    lines.append("```json")
+    lines.append(json.dumps(report.get("prepare_output", {}), indent=2))
+    lines.append("```")
+    lines.append("")
     lines.append("## Parameters")
     lines.append("```json")
     lines.append(json.dumps(report.get("parameters", {}), indent=2))
@@ -415,6 +437,11 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
         for key in ("base_preview", "predictive_preview", "before_after", "profile"):
             lines.append(f"- {key}: `{files.get(key)}`")
     lines.append("")
+    lines.append("## Inline Image Availability")
+    lines.append("```json")
+    lines.append(json.dumps(report.get("inline_image_availability", {}), indent=2))
+    lines.append("```")
+    lines.append("")
     lines.append("## Visual Inspection Checklist")
     lines.append("- Subject readability improved")
     lines.append("- Thumbnail impact improved")
@@ -466,6 +493,7 @@ async def run_predictive_evaluation(
         preview_width=preview_width,
     )
     prepare_payload = _structured_payload(prepare_result)
+    prepare_image_metadata = _tool_image_metadata(prepare_result)
     if "error" in prepare_payload:
         return {"error": "auto_edit_predictive failed", "details": prepare_payload}
 
@@ -483,10 +511,16 @@ async def run_predictive_evaluation(
             preview_width=preview_width,
         )
         predictive_result = _structured_payload(verify_result)
+        verify_image_metadata = _tool_image_metadata(verify_result)
         if "error" in predictive_result:
             return {"error": "verify_predictive_edit failed", "details": predictive_result}
     else:
         predictive_result = prepare_payload
+        verify_image_metadata = {
+            "attachment_available": False,
+            "image_count": 0,
+            "content_types": [],
+        }
         if "base_preview_path" not in prepare_payload:
             prepare_payload["base_preview_path"] = prepare_payload.get("base_preview") or base_preview_fallback
         if "edited_preview_path" not in prepare_payload:
@@ -571,6 +605,7 @@ async def run_predictive_evaluation(
         "intensity": intensity,
         "style": style or brief,
         "diagnosis": prepare_payload.get("diagnosis", {}).get("diagnosis", []),
+        "prepare_output": prepare_payload,
         "parameters": parameters,
         "expected_effect": prepare_payload.get("expected_effects", prepare_payload.get("expected_effect", [])),
         "planned_scores": planned_scores,
@@ -582,6 +617,10 @@ async def run_predictive_evaluation(
         "approved_curves_used": prepare_payload.get("approved_curves_used", []),
         "validation": validation,
         "blocked_controls_considered": prepare_payload.get("blocked_controls_considered", []),
+        "inline_image_availability": {
+            "prepare": prepare_image_metadata,
+            "verify": verify_image_metadata,
+        },
         "export_gate": export_gate,
         "manual_score_comparison": manual_score_comparison,
         "failure_mode_checks": banned_checks,

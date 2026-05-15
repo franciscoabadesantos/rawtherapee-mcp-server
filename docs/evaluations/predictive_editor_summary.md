@@ -1,58 +1,55 @@
 # Predictive Editor Summary
 
-## Phase 8 Result
+## Phase 9.1 Result
 - active_real_raw_entries: `3`
-- proof_plus: `1`
-- proof_only: `1`
-- failed_edit_quality: `1`
-- export: `0`
-- crop_only_improvement: `0`
-- average_subject_separation_improvement: `5.70`
-- average_non_crop_tonal_improvement: `6.10`
-- average_color_intent_improvement: `6.53`
-- average_highlight_shadow_quality: `6.07`
-- decision_accuracy_vs_human_scores: `1.00`
+- run_folder: `docs/evaluations/runs_phase9/`
+- prepare_decision_distribution: `verification_required=3`
+- final_decision_distribution: `proof_plus=1`, `failed_edit_quality=1`, `proof_only=1`, `export=0`, `crop_only_improvement=0`
+- decision_source_distribution: `verify_predictive_edit=3`
+- inline_prepare_images: `3/3 reports include 3 attached images`
+- inline_verify_images: `3/3 reports include 3 attached images`
+- consistency_warning_count_real_runs: `0`
+- synthetic_consistency_warning_case: `docs/evaluations/runs_phase9/synthetic_consistency_case/report.json`
 
-## Approved Tonal-Depth Presets
-- `tone_curve.midtone_depth_v1`
-- `luminance_curve.landscape_depth_v1`
-- `luminance_curve.low_light_lift_v1`
+## Protocol Checks
+- Each real Phase 9 report now includes `Planner / Prepare Output`, `Rendered Preview Files`, `Inline Image Availability`, `Visual Verification Observations`, `Consistency Checks`, and `Final Decision`.
+- Each real Phase 9 report records `decision_source = verify_predictive_edit`.
+- `auto_edit_predictive_prepare` did not produce any final edit-quality decisions on the real set. All three returned `decision = verification_required`.
+- `verify_predictive_edit` was the only final decision step on the real set.
+- The synthetic contradiction case produced `4` consistency warnings without silently rewriting scores.
 
-## Before/After Delta vs Phase 7.1
+## Phase 8 vs Phase 9
 ### IMG_1279
-- decision: `failed_edit_quality -> proof_plus`
-- non_crop_tonal_improvement: `5.8 -> 7.0`
-- subject_separation_improvement: `6.5 -> 7.2`
-- highlight_shadow_quality: `6.0 -> 6.6`
-- perceived_non_crop_improvement: `weak -> moderate`
-- approved preset used: `tone_curve.midtone_depth_v1`
-- reading: the stronger approved midtone-depth curve makes the tram read faster and gives the rails/background more layered depth before any crop.
+- decision_before_phase9: `proof_plus`
+- decision_after_phase9: `proof_plus`
+- perceived_non_crop_improvement_before: `moderate`
+- perceived_non_crop_improvement_after: `moderate`
+- consistency_warnings: `0`
+- notes: the enforced two-step flow preserved the prior outcome while moving final judgment to `verify_predictive_edit` and attaching base, edited, and before/after images in both steps.
 
 ### IMG_1850
-- decision: `failed_edit_quality -> failed_edit_quality`
-- non_crop_tonal_improvement: `5.2 -> 6.3`
-- subject_separation_improvement: `5.0 -> 5.3`
-- highlight_shadow_quality: `5.5 -> 6.6`
-- perceived_non_crop_improvement: `weak -> weak`
-- approved preset used: `luminance_curve.landscape_depth_v1`
-- reading: cloud and hillside definition improve, but the haze and broad scene hierarchy still do not become meaningfully stronger.
+- decision_before_phase9: `failed_edit_quality`
+- decision_after_phase9: `failed_edit_quality`
+- perceived_non_crop_improvement_before: `weak`
+- perceived_non_crop_improvement_after: `weak`
+- consistency_warnings: `0`
+- notes: the protocol change did not inflate the landscape result; the edit remains honestly below meaningful non-crop quality and now records explicit prepare output plus verification observations.
 
 ### IMG_3709
-- decision: `proof_only -> proof_only`
-- non_crop_tonal_improvement: `4.0 -> 5.0`
-- subject_separation_improvement: `4.2 -> 4.6`
-- highlight_shadow_quality: `4.6 -> 5.0`
-- perceived_non_crop_improvement: `none -> weak`
-- approved preset used: `luminance_curve.low_light_lift_v1`
-- reading: the subject becomes slightly easier to read, but the low-light gain remains modest and does not cross into meaningful non-crop improvement.
+- decision_before_phase9: `proof_only`
+- decision_after_phase9: `proof_only`
+- perceived_non_crop_improvement_before: `weak`
+- perceived_non_crop_improvement_after: `weak`
+- consistency_warnings: `0`
+- notes: the low-light case stays modest under the new flow, with final classification still coming only from the verification step.
 
-## Aggregate Interpretation
-- The controlled tonal-depth family improved the system materially on the hierarchy-heavy street case.
-- It also improved the two weaker cases numerically and visually, but not enough to satisfy the non-crop quality gate.
-- This means the added family is useful: it produced the first real `proof_plus` result without harming `naturalness_score` or `artifact_free_score`.
-- The remaining limitation is breadth and scene specificity. Midtone-depth shaping helps urban geometry more than haze-heavy landscapes or dim single-subject dusk scenes.
+## Synthetic Consistency Case
+- base_case: `IMG_1279` Phase 9 previews reused with contradictory descriptions and high artifact/naturalness/highlight-shadow scores
+- result_decision_source: `verify_predictive_edit`
+- warning_fields: `artifact_free_score`, `naturalness_score`, `highlight_shadow_quality`, `artifact_check`
+- reading: warnings fired as expected when the text mentioned halos, fake HDR, harshness, clipping, cyan cast, and banding while the numeric scores still claimed a clean natural result.
 
-## Recommendation
-- Keep the current Phase 8 tonal-depth family.
-- Next capability work should focus on one additional controlled family aimed at haze / sky structure or low-light subject lift, because those are the two remaining failure patterns on the real RAW set.
-- Do not relax the honesty gate. The Phase 8 result is promising specifically because only one image crossed into `proof_plus`, while the other two remained honestly classified.
+## Interpretation
+- Phase 9.1 validates the sequencing change without changing the real RAW outcomes.
+- The important regression result is structural, not score-seeking: `prepare` now stops at rendered evidence, and `verify` owns the final decision in every real run.
+- The report format now makes that separation visible and auditable.

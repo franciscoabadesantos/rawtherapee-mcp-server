@@ -1,0 +1,130 @@
+{
+  "images": {
+    "IMG_1279": {
+      "decision_before_phase9": "proof_plus",
+      "decision_after_phase9": "proof_plus",
+      "perceived_non_crop_improvement_before": "moderate",
+      "perceived_non_crop_improvement_after": "moderate",
+      "consistency_warnings": [],
+      "notes": "The stronger approved midtone-depth curve materially improves tram readability before any crop is considered. Midtone depth and subject separation now read as meaningful while staying natural.",
+      "prepare_decision": "verification_required",
+      "decision_source": "verify_predictive_edit",
+      "inline_image_availability": {
+        "prepare": {
+          "attachment_available": true,
+          "image_count": 3,
+          "content_types": [
+            "text",
+            "image",
+            "image",
+            "image"
+          ]
+        },
+        "verify": {
+          "attachment_available": true,
+          "image_count": 3,
+          "content_types": [
+            "text",
+            "image",
+            "image",
+            "image"
+          ]
+        }
+      },
+      "report_json": "docs/evaluations/runs_phase9/IMG_1279/report.json",
+      "report_md": "docs/evaluations/runs_phase9/IMG_1279/report.md"
+    },
+    "IMG_1850": {
+      "decision_before_phase9": "failed_edit_quality",
+      "decision_after_phase9": "failed_edit_quality",
+      "perceived_non_crop_improvement_before": "weak",
+      "perceived_non_crop_improvement_after": "weak",
+      "consistency_warnings": [],
+      "notes": "The stronger landscape tonal-depth preset adds some cloud and hillside definition, but the haze and broad landscape hierarchy still read as only mildly improved.",
+      "prepare_decision": "verification_required",
+      "decision_source": "verify_predictive_edit",
+      "inline_image_availability": {
+        "prepare": {
+          "attachment_available": true,
+          "image_count": 3,
+          "content_types": [
+            "text",
+            "image",
+            "image",
+            "image"
+          ]
+        },
+        "verify": {
+          "attachment_available": true,
+          "image_count": 3,
+          "content_types": [
+            "text",
+            "image",
+            "image",
+            "image"
+          ]
+        }
+      },
+      "report_json": "docs/evaluations/runs_phase9/IMG_1850/report.json",
+      "report_md": "docs/evaluations/runs_phase9/IMG_1850/report.md"
+    },
+    "IMG_3709": {
+      "decision_before_phase9": "proof_only",
+      "decision_after_phase9": "proof_only",
+      "perceived_non_crop_improvement_before": "weak",
+      "perceived_non_crop_improvement_after": "weak",
+      "consistency_warnings": [],
+      "notes": "The low-light tonal-depth preset makes the subject slightly easier to read, but the gain remains modest and does not create a meaningful non-crop edit.",
+      "prepare_decision": "verification_required",
+      "decision_source": "verify_predictive_edit",
+      "inline_image_availability": {
+        "prepare": {
+          "attachment_available": true,
+          "image_count": 3,
+          "content_types": [
+            "text",
+            "image",
+            "image",
+            "image"
+          ]
+        },
+        "verify": {
+          "attachment_available": true,
+          "image_count": 3,
+          "content_types": [
+            "text",
+            "image",
+            "image",
+            "image"
+          ]
+        }
+      },
+      "report_json": "docs/evaluations/runs_phase9/IMG_3709/report.json",
+      "report_md": "docs/evaluations/runs_phase9/IMG_3709/report.md"
+    }
+  },
+  "synthetic_consistency_case": {
+    "decision_source": "verify_predictive_edit",
+    "decision": "export",
+    "warning_count": 4,
+    "warnings": [
+      {
+        "field": "artifact_free_score",
+        "reason": "Descriptions mention potential artifacts/unnatural traits but artifact_free_score is 9.0"
+      },
+      {
+        "field": "naturalness_score",
+        "reason": "Descriptions mention potential artifacts/unnatural traits but naturalness_score is 8.7"
+      },
+      {
+        "field": "highlight_shadow_quality",
+        "reason": "Descriptions mention potential artifacts/unnatural traits but highlight_shadow_quality is 8.5"
+      },
+      {
+        "field": "artifact_check",
+        "reason": "Descriptions mention artifact-like terms but artifact_check is pass"
+      }
+    ],
+    "report_json": "docs/evaluations/runs_phase9/synthetic_consistency_case/report.json"
+  }
+}

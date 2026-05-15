@@ -1,0 +1,110 @@
+{
+  "decision_source": "verify_predictive_edit",
+  "raw_path": "/mnt/c/Users/santo/Pictures/IMG_1279.CR3",
+  "profile_path": "docs/evaluations/runs_phase9/IMG_1279/predictive_profile.pp3",
+  "base_preview_path": "docs/evaluations/runs_phase9/IMG_1279/base_preview.jpg",
+  "edited_preview_path": "docs/evaluations/runs_phase9/IMG_1279/predictive_preview.jpg",
+  "before_after_path": "docs/evaluations/runs_phase9/IMG_1279/before_after.jpg",
+  "visual_verification_scores": {
+    "global_visible_difference_score": 0.0,
+    "global_pixel_difference": 8.5,
+    "subject_hierarchy_score": 8.0,
+    "thumbnail_subject_read_score": 8.0,
+    "color_quality_score": 8.0,
+    "naturalness_score": 8.7,
+    "artifact_free_score": 9.0,
+    "crop_dependency": "secondary",
+    "non_crop_tonal_improvement": 8.0,
+    "subject_separation_improvement": 8.0,
+    "color_intent_improvement": 8.0,
+    "highlight_shadow_quality": 8.5,
+    "composition_improvement": 4.0,
+    "crop_contribution": 2.0,
+    "perceived_non_crop_improvement": "moderate",
+    "meaningful_non_crop_edit": true,
+    "non_crop_quality_pass_count": 4,
+    "non_crop_quality_pass_fields": [
+      "subject_separation_improvement",
+      "non_crop_tonal_improvement",
+      "color_intent_improvement",
+      "highlight_shadow_quality"
+    ],
+    "crop_only_improvement": false,
+    "non_crop_edit_quality": "pass",
+    "non_crop_edit_quality_reason": "subject separation, midtone depth, and color presence improve visibly before any crop is applied.",
+    "hierarchy_boost_applied": false,
+    "artifact_check": "pass",
+    "decision": "export",
+    "export_gate_passed": true,
+    "gate_requirements": {
+      "meaningful_non_crop_requirements": {
+        "minimum_score": 7.0,
+        "minimum_pass_count": 2,
+        "fields": [
+          "subject_separation_improvement",
+          "non_crop_tonal_improvement",
+          "color_intent_improvement",
+          "highlight_shadow_quality"
+        ]
+      },
+      "subject_hierarchy_score_min": 7.0,
+      "thumbnail_subject_read_score_min": 7.0,
+      "artifact_free_score_min": 8.0,
+      "naturalness_score_min": 7.0,
+      "crop_dependency": "not primary",
+      "crop_contribution_max_for_export": 6.9,
+      "validation_allowed": true
+    },
+    "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
+    "visible_difference_score": 0.0,
+    "hierarchy_improvement_score": 8.0
+  },
+  "verification_observations": {
+    "subject_change_description": "Subject is clearer but edges feel harsh.",
+    "background_change_description": "Background shows halos and looks fake HDR.",
+    "midtone_change_description": "Midtones look crunchy and slightly muddy.",
+    "highlight_shadow_description": "Highlights feel clipped and shadows a bit milky.",
+    "color_change_description": "A cyan cast appears in parts of the frame.",
+    "artifact_description": "Visible halo, fake HDR, and banding-like harsh transitions.",
+    "crop_dependency_description": "Improvement is mostly tonal, not crop-driven.",
+    "scores": {
+      "global_pixel_difference": 8.5,
+      "subject_separation_improvement": 8.0,
+      "non_crop_tonal_improvement": 8.0,
+      "color_intent_improvement": 8.0,
+      "highlight_shadow_quality": 8.5,
+      "composition_improvement": 4.0,
+      "crop_contribution": 2.0,
+      "perceived_non_crop_improvement": "moderate",
+      "artifact_check": "pass",
+      "naturalness_score": 8.7,
+      "artifact_free_score": 9.0
+    }
+  },
+  "consistency_checks": {
+    "warnings": [
+      {
+        "field": "artifact_free_score",
+        "reason": "Descriptions mention potential artifacts/unnatural traits but artifact_free_score is 9.0"
+      },
+      {
+        "field": "naturalness_score",
+        "reason": "Descriptions mention potential artifacts/unnatural traits but naturalness_score is 8.7"
+      },
+      {
+        "field": "highlight_shadow_quality",
+        "reason": "Descriptions mention potential artifacts/unnatural traits but highlight_shadow_quality is 8.5"
+      },
+      {
+        "field": "artifact_check",
+        "reason": "Descriptions mention artifact-like terms but artifact_check is pass"
+      }
+    ],
+    "score_adjustments": []
+  },
+  "non_crop_edit_quality": "pass",
+  "decision": "export",
+  "export_gate_passed": true,
+  "reason": "subject separation, midtone depth, and color presence improve visibly before any crop is applied.",
+  "export_path": null
+}

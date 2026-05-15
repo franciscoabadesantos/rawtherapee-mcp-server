@@ -13,6 +13,8 @@ from fastmcp.tools import ToolResult
 from PIL import Image as PILImage
 
 from rawtherapee_mcp.config import RTConfig, load_config
+from rawtherapee_mcp.control_policy import find_approved_curve
+from rawtherapee_mcp.predictive_editor import score_predictive_export_decision
 from rawtherapee_mcp.server import auto_edit_predictive, preview_before_after, preview_raw
 
 RAW_SUFFIXES = {
@@ -101,7 +103,14 @@ def _contains_banned_controls(parameters: dict[str, Any]) -> dict[str, bool]:
     local_contrast_used = "local_contrast" in parameters
     hsv_group = parameters.get("hsv_equalizer", {})
     hsv_hcurve_used = isinstance(hsv_group, dict) and "h_curve" in hsv_group
-    arbitrary_curves_used = any(key in parameters for key in ("tone_curve", "rgb_curves"))
+    tone_curve_group = parameters.get("tone_curve", {})
+    approved_tone_curve = (
+        isinstance(tone_curve_group, dict)
+        and find_approved_curve("Exposure", "Curve", tone_curve_group.get("curve")) is not None
+    )
+    arbitrary_curves_used = "rgb_curves" in parameters or (
+        "tone_curve" in parameters and not approved_tone_curve
+    )
     return {
         "local_contrast_amount_emitted": local_contrast_used,
         "hsv_hcurve_emitted": hsv_hcurve_used,
@@ -119,28 +128,38 @@ def _source_type(path: Path) -> str:
 def _decision_from_scores(scores: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
     validation_allowed = bool(validation.get("allowed", False))
     global_visible = float(scores.get("global_visible_difference_score", scores.get("visible_difference_score", 0)))
+    global_pixel_difference = float(scores.get("global_pixel_difference", global_visible))
     subject_hierarchy = float(scores.get("subject_hierarchy_score", scores.get("hierarchy_improvement_score", 0)))
     thumbnail_read = float(scores.get("thumbnail_subject_read_score", scores.get("hierarchy_improvement_score", 0)))
     color_quality = float(scores.get("color_quality_score", 0))
     naturalness = float(scores.get("naturalness_score", 0))
     artifact_free = float(scores.get("artifact_free_score", 9 if scores.get("artifact_check") == "pass" else 0))
     crop_dependency = str(scores.get("crop_dependency", "unknown"))
-    export_gate_passed = (
-        validation_allowed
-        and subject_hierarchy >= 7.0
-        and thumbnail_read >= 7.0
-        and artifact_free >= 8.0
-        and naturalness >= 7.0
-        and crop_dependency != "primary"
+    decision = score_predictive_export_decision(
+        validation_allowed=validation_allowed,
+        global_visible_difference_score=global_visible,
+        subject_hierarchy_score=subject_hierarchy,
+        thumbnail_subject_read_score=thumbnail_read,
+        color_quality_score=color_quality,
+        naturalness_score=naturalness,
+        artifact_free_score=artifact_free,
+        crop_dependency=crop_dependency,
+        global_pixel_difference=global_pixel_difference,
+        non_crop_tonal_improvement=float(scores.get("non_crop_tonal_improvement", 0.0)),
+        subject_separation_improvement=float(scores.get("subject_separation_improvement", 0.0)),
+        color_intent_improvement=float(scores.get("color_intent_improvement", 0.0)),
+        highlight_shadow_quality=float(scores.get("highlight_shadow_quality", 0.0)),
+        composition_improvement=float(scores.get("composition_improvement", 0.0)),
+        crop_contribution=float(scores.get("crop_contribution", 0.0)),
+        perceived_non_crop_improvement=(
+            str(scores["perceived_non_crop_improvement"])
+            if "perceived_non_crop_improvement" in scores
+            else None
+        ),
     )
-    if export_gate_passed:
-        decision = "export"
-    elif crop_dependency == "primary" or global_visible < 5.5:
-        decision = "proof_only"
-    else:
-        decision = "proof_plus"
     return {
         "global_visible_difference_score": global_visible,
+        "global_pixel_difference": global_pixel_difference,
         "subject_hierarchy_score": subject_hierarchy,
         "thumbnail_subject_read_score": thumbnail_read,
         "color_quality_score": color_quality,
@@ -148,21 +167,24 @@ def _decision_from_scores(scores: dict[str, Any], validation: dict[str, Any]) ->
         "artifact_free_score": artifact_free,
         "artifact_check": "pass" if artifact_free >= 8.0 else "fail",
         "crop_dependency": crop_dependency,
+        "non_crop_tonal_improvement": float(scores.get("non_crop_tonal_improvement", 0.0)),
+        "subject_separation_improvement": float(scores.get("subject_separation_improvement", 0.0)),
+        "color_intent_improvement": float(scores.get("color_intent_improvement", 0.0)),
+        "highlight_shadow_quality": float(scores.get("highlight_shadow_quality", 0.0)),
+        "composition_improvement": float(scores.get("composition_improvement", 0.0)),
+        "crop_contribution": float(scores.get("crop_contribution", 0.0)),
+        "perceived_non_crop_improvement": decision["perceived_non_crop_improvement"],
+        "meaningful_non_crop_edit": decision["meaningful_non_crop_edit"],
+        "non_crop_quality_pass_count": decision["non_crop_quality_pass_count"],
+        "non_crop_quality_pass_fields": decision["non_crop_quality_pass_fields"],
+        "crop_only_improvement": decision["crop_only_improvement"],
+        "non_crop_edit_quality": decision["non_crop_edit_quality"],
+        "non_crop_edit_quality_reason": decision["non_crop_edit_quality_reason"],
         "hierarchy_boost_applied": bool(scores.get("hierarchy_boost_applied", False)),
-        "decision": decision,
-        "export_gate_passed": export_gate_passed,
-        "gate_requirements": {
-            "subject_hierarchy_score_min": 7.0,
-            "thumbnail_subject_read_score_min": 7.0,
-            "artifact_free_score_min": 8.0,
-            "naturalness_score_min": 7.0,
-            "crop_dependency": "not primary",
-            "validation_allowed": True,
-        },
-        "scoring_guidance": (
-            "Hierarchy score should answer: does the intended subject become easier and faster "
-            "to read than competing structures?"
-        ),
+        "decision": decision["decision"],
+        "export_gate_passed": decision["export_gate_passed"],
+        "gate_requirements": decision["gate_requirements"],
+        "scoring_guidance": decision["scoring_guidance"],
         "visible_difference_score": global_visible,
         "hierarchy_improvement_score": subject_hierarchy,
     }
@@ -175,10 +197,16 @@ def _maybe_number(value: str) -> float | str:
         return value
 
 
-def _load_human_score(source: Path, brief: str, intensity: str, scores_csv: Path = SCORES_CSV) -> dict[str, Any] | None:
-    if not scores_csv.is_file():
+def _load_human_score(
+    source: Path,
+    brief: str,
+    intensity: str,
+    scores_csv: Path | None = None,
+) -> dict[str, Any] | None:
+    resolved_scores_csv = scores_csv or SCORES_CSV
+    if not resolved_scores_csv.is_file():
         return None
-    with scores_csv.open(newline="", encoding="utf-8") as handle:
+    with resolved_scores_csv.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             if not row:
                 continue
@@ -207,6 +235,12 @@ def _manual_score_comparison(
         "color_quality": "color_quality_score",
         "naturalness": "naturalness_score",
         "artifact_free": "artifact_free_score",
+        "non_crop_tonal_improvement": "non_crop_tonal_improvement",
+        "subject_separation_improvement": "subject_separation_improvement",
+        "color_intent_improvement": "color_intent_improvement",
+        "highlight_shadow_quality": "highlight_shadow_quality",
+        "composition_improvement": "composition_improvement",
+        "crop_contribution": "crop_contribution",
     }
     for human_key, auto_key in mapping.items():
         human_value = human_scores.get(human_key)
@@ -247,6 +281,13 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
     lines.append("## Expected Effects")
     for effect in report.get("expected_effect", []):
         lines.append(f"- {effect}")
+    approved_curves = report.get("approved_curves_used", [])
+    if isinstance(approved_curves, list) and approved_curves:
+        lines.append("")
+        lines.append("## Approved Curves")
+        lines.append("```json")
+        lines.append(json.dumps(approved_curves, indent=2))
+        lines.append("```")
     lines.append("")
     lines.append("## Validation")
     lines.append("```json")
@@ -257,6 +298,13 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
     lines.append("```json")
     lines.append(json.dumps(report.get("export_gate", {}), indent=2))
     lines.append("```")
+    non_crop_quality = report.get("export_gate", {})
+    if isinstance(non_crop_quality, dict):
+        lines.append("")
+        lines.append(
+            f"Non-crop edit quality: {non_crop_quality.get('non_crop_edit_quality', 'fail')}"
+        )
+        lines.append(f"Reason: {non_crop_quality.get('non_crop_edit_quality_reason', 'Unavailable.')}")
     comparison = report.get("manual_score_comparison")
     if isinstance(comparison, dict):
         lines.append("")
@@ -380,6 +428,7 @@ async def run_predictive_evaluation(
         "diagnosis": predictive_result.get("diagnosis", {}).get("diagnosis", []),
         "parameters": parameters,
         "expected_effect": predictive_result.get("expected_effect", []),
+        "approved_curves_used": predictive_result.get("approved_curves_used", []),
         "validation": validation,
         "blocked_controls_considered": predictive_result.get("blocked_controls_considered", []),
         "export_gate": export_gate,

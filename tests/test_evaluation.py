@@ -54,16 +54,31 @@ class TestPredictiveEvaluation:
                     "vibrance": {"enabled": True, "pastels": 8, "saturated": 2},
                 },
                 "expected_effect": ["color presence should improve naturally"],
+                "approved_curves_used": [
+                    {
+                        "id": "tone_curve.midtone_pop_v1",
+                        "reason": "flat_midtone_geometry + weak_subject_readability",
+                        "risk": "may increase harshness; checked by export gate",
+                    }
+                ],
                 "validation": {"allowed": True, "blocked": [], "clamped": []},
                 "blocked_controls_considered": [{"control": "Local Contrast.Amount", "reason": "blocked by manifest"}],
                 "scores": {
                     "global_visible_difference_score": 7.8,
+                    "global_pixel_difference": 7.8,
                     "subject_hierarchy_score": 7.4,
                     "thumbnail_subject_read_score": 7.2,
                     "color_quality_score": 7.5,
                     "naturalness_score": 8.0,
                     "artifact_free_score": 9.0,
                     "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 7.2,
+                    "subject_separation_improvement": 7.4,
+                    "color_intent_improvement": 7.3,
+                    "highlight_shadow_quality": 6.6,
+                    "composition_improvement": 5.0,
+                    "crop_contribution": 3.0,
+                    "perceived_non_crop_improvement": "moderate",
                     "export_gate_passed": True,
                 },
             }
@@ -102,6 +117,7 @@ class TestPredictiveEvaluation:
         assert "parameters" in parsed
         assert "validation" in parsed
         assert "export_gate" in parsed
+        assert parsed["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
         checks = parsed["failure_mode_checks"]
         assert checks["local_contrast_amount_emitted"] is False
         assert checks["hsv_hcurve_emitted"] is False
@@ -130,12 +146,20 @@ class TestPredictiveEvaluation:
                 "blocked_controls_considered": [],
                 "scores": {
                     "global_visible_difference_score": 7.0,
+                    "global_pixel_difference": 7.0,
                     "subject_hierarchy_score": 6.0,
                     "thumbnail_subject_read_score": 6.0,
                     "color_quality_score": 7.0,
                     "naturalness_score": 8.0,
                     "artifact_free_score": 9.0,
                     "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 5.8,
+                    "subject_separation_improvement": 5.7,
+                    "color_intent_improvement": 5.9,
+                    "highlight_shadow_quality": 5.2,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "weak",
                 },
             }
 
@@ -189,12 +213,20 @@ class TestPredictiveEvaluation:
                 "blocked_controls_considered": [],
                 "scores": {
                     "global_visible_difference_score": 9.5,
+                    "global_pixel_difference": 9.5,
                     "subject_hierarchy_score": 8.0,
                     "thumbnail_subject_read_score": 8.0,
                     "color_quality_score": 8.0,
                     "naturalness_score": 8.0,
                     "artifact_free_score": 9.0,
                     "crop_dependency": "primary",
+                    "non_crop_tonal_improvement": 4.5,
+                    "subject_separation_improvement": 4.8,
+                    "color_intent_improvement": 4.2,
+                    "highlight_shadow_quality": 4.0,
+                    "composition_improvement": 8.2,
+                    "crop_contribution": 8.9,
+                    "perceived_non_crop_improvement": "weak",
                     "export_gate_passed": False,
                 },
             }
@@ -216,7 +248,7 @@ class TestPredictiveEvaluation:
                 )
             )
 
-        assert report["export_gate"]["decision"] == "proof_only"
+        assert report["export_gate"]["decision"] == "crop_only_improvement"
         assert report["export_gate"]["crop_dependency"] == "primary"
         assert report["export_gate"]["export_gate_passed"] is False
 
@@ -236,7 +268,7 @@ class TestPredictiveEvaluation:
 
         async def fake_auto_edit(*args, **kwargs):
             return {
-                "decision": "proof_plus",
+                "decision": "failed_edit_quality",
                 "profile_path": str(source_profile),
                 "preview_path": str(source_pred),
                 "diagnosis": {"diagnosis": []},
@@ -246,12 +278,20 @@ class TestPredictiveEvaluation:
                 "blocked_controls_considered": [],
                 "scores": {
                     "global_visible_difference_score": 7.0,
+                    "global_pixel_difference": 7.0,
                     "subject_hierarchy_score": 6.0,
                     "thumbnail_subject_read_score": 6.0,
                     "color_quality_score": 7.0,
                     "naturalness_score": 8.0,
                     "artifact_free_score": 9.0,
                     "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 5.8,
+                    "subject_separation_improvement": 5.7,
+                    "color_intent_improvement": 5.9,
+                    "highlight_shadow_quality": 5.2,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "weak",
                 },
             }
 
@@ -275,9 +315,9 @@ class TestPredictiveEvaluation:
         assert report["source_type"] == "raw"
         assert report["is_raw_regression"] is True
         assert report["calibration_allowed"] is True
-        assert report["export_gate"]["decision"] == "proof_plus"
+        assert report["export_gate"]["decision"] == "failed_edit_quality"
 
-    def test_global_visible_difference_alone_cannot_pass_export_gate(self) -> None:
+    def test_high_global_difference_cannot_pass_if_non_crop_tonal_improvement_is_weak(self) -> None:
         result = score_predictive_export_decision(
             validation_allowed=True,
             global_visible_difference_score=9.8,
@@ -287,11 +327,19 @@ class TestPredictiveEvaluation:
             naturalness_score=8.0,
             artifact_free_score=9.0,
             crop_dependency="secondary",
+            global_pixel_difference=9.8,
+            non_crop_tonal_improvement=5.0,
+            subject_separation_improvement=6.2,
+            color_intent_improvement=6.4,
+            highlight_shadow_quality=5.4,
+            composition_improvement=4.0,
+            crop_contribution=2.0,
+            perceived_non_crop_improvement="weak",
         )
         assert result["export_gate_passed"] is False
-        assert result["decision"] == "proof_plus"
+        assert result["decision"] == "failed_edit_quality"
 
-    def test_img_1279_style_scores_return_proof_plus(self) -> None:
+    def test_proof_plus_requires_meaningful_non_crop_improvement(self) -> None:
         result = score_predictive_export_decision(
             validation_allowed=True,
             global_visible_difference_score=7.0,
@@ -301,11 +349,41 @@ class TestPredictiveEvaluation:
             naturalness_score=8.0,
             artifact_free_score=8.0,
             crop_dependency="none",
+            global_pixel_difference=7.0,
+            non_crop_tonal_improvement=7.2,
+            subject_separation_improvement=7.1,
+            color_intent_improvement=6.6,
+            highlight_shadow_quality=5.8,
+            composition_improvement=4.5,
+            crop_contribution=2.0,
+            perceived_non_crop_improvement="moderate",
         )
         assert result["export_gate_passed"] is False
         assert result["decision"] == "proof_plus"
 
-    def test_crop_primary_blocks_export_even_with_high_global_difference(self) -> None:
+    def test_img_1279_style_scores_now_fail_non_crop_quality(self) -> None:
+        result = score_predictive_export_decision(
+            validation_allowed=True,
+            global_visible_difference_score=7.0,
+            subject_hierarchy_score=6.0,
+            thumbnail_subject_read_score=6.0,
+            color_quality_score=7.0,
+            naturalness_score=8.0,
+            artifact_free_score=8.0,
+            crop_dependency="secondary",
+            global_pixel_difference=7.0,
+            non_crop_tonal_improvement=6.1,
+            subject_separation_improvement=6.2,
+            color_intent_improvement=6.4,
+            highlight_shadow_quality=5.7,
+            composition_improvement=5.0,
+            crop_contribution=3.0,
+            perceived_non_crop_improvement="weak",
+        )
+        assert result["export_gate_passed"] is False
+        assert result["decision"] == "failed_edit_quality"
+
+    def test_crop_only_improvement_is_classified_separately(self) -> None:
         result = score_predictive_export_decision(
             validation_allowed=True,
             global_visible_difference_score=10.0,
@@ -315,9 +393,152 @@ class TestPredictiveEvaluation:
             naturalness_score=9.0,
             artifact_free_score=9.0,
             crop_dependency="primary",
+            global_pixel_difference=10.0,
+            non_crop_tonal_improvement=4.0,
+            subject_separation_improvement=4.2,
+            color_intent_improvement=4.0,
+            highlight_shadow_quality=4.3,
+            composition_improvement=8.5,
+            crop_contribution=9.0,
+            perceived_non_crop_improvement="weak",
         )
         assert result["export_gate_passed"] is False
-        assert result["decision"] == "proof_only"
+        assert result["decision"] == "crop_only_improvement"
+
+    def test_reports_include_non_crop_edit_quality_sentence(self, tmp_path: Path) -> None:
+        raw_file = tmp_path / "IMG_1279.jpg"
+        _write_jpeg(raw_file, color="white")
+
+        source_base = tmp_path / "source_base.jpg"
+        source_pred = tmp_path / "source_pred.jpg"
+        source_profile = tmp_path / "source_profile.pp3"
+        _write_jpeg(source_base, color="blue")
+        _write_jpeg(source_pred, color="green")
+        source_profile.write_text("[Version]\nAppVersion=5.11\n", encoding="utf-8")
+
+        async def fake_preview_raw(*args, **kwargs):
+            return {"success": True, "preview_path": str(source_base)}
+
+        async def fake_auto_edit(*args, **kwargs):
+            return {
+                "decision": "failed_edit_quality",
+                "profile_path": str(source_profile),
+                "preview_path": str(source_pred),
+                "diagnosis": {"diagnosis": []},
+                "parameters": {"exposure": {"contrast": 9}},
+                "expected_effect": [],
+                "validation": {"allowed": True, "blocked": [], "clamped": []},
+                "blocked_controls_considered": [],
+                "scores": {
+                    "global_visible_difference_score": 7.0,
+                    "global_pixel_difference": 7.0,
+                    "subject_hierarchy_score": 6.0,
+                    "thumbnail_subject_read_score": 6.0,
+                    "color_quality_score": 7.0,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                    "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 5.8,
+                    "subject_separation_improvement": 5.7,
+                    "color_intent_improvement": 5.9,
+                    "highlight_shadow_quality": 5.2,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "weak",
+                },
+            }
+
+        async def fake_before_after(*args, **kwargs):
+            return {"before": {"preview_path": str(source_base)}, "after": {"preview_path": str(source_pred)}}
+
+        with (
+            patch("rawtherapee_mcp.evaluation.preview_raw", side_effect=fake_preview_raw),
+            patch("rawtherapee_mcp.evaluation.auto_edit_predictive", side_effect=fake_auto_edit),
+            patch("rawtherapee_mcp.evaluation.preview_before_after", side_effect=fake_before_after),
+        ):
+            report = asyncio.run(
+                run_predictive_evaluation(
+                    raw_path=str(raw_file),
+                    brief="warm natural travel",
+                    intensity="medium",
+                    output_root=tmp_path / "eval",
+                )
+            )
+
+        markdown = Path(report["files"]["report_md"]).read_text(encoding="utf-8")
+        assert "Non-crop edit quality: fail" in markdown
+        assert "Reason:" in markdown
+
+    def test_perceived_non_crop_improvement_is_included_in_report_parsing(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "scores.csv"
+        raw_file = tmp_path / "IMG_1279.jpg"
+        _write_jpeg(raw_file, color="white")
+        csv_path.write_text(
+            "image,brief,intensity,visible_difference,hierarchy_improvement,color_quality,naturalness,"
+            "artifact_free,crop_dependency,perceived_non_crop_improvement,decision_correct,notes\n"
+            'IMG_1279,"warm natural travel",medium,8,6.5,8,8,8,none,weak,yes,"weak base edit"\n',
+            encoding="utf-8",
+        )
+
+        async def fake_preview_raw(*args, **kwargs):
+            return {"success": True, "preview_path": str(tmp_path / "base.jpg")}
+
+        async def fake_auto_edit(*args, **kwargs):
+            return {
+                "decision": "failed_edit_quality",
+                "profile_path": str(tmp_path / "profile.pp3"),
+                "preview_path": str(tmp_path / "pred.jpg"),
+                "diagnosis": {"diagnosis": []},
+                "parameters": {},
+                "expected_effect": [],
+                "validation": {"allowed": True, "blocked": [], "clamped": []},
+                "blocked_controls_considered": [],
+                "scores": {
+                    "global_visible_difference_score": 7.0,
+                    "global_pixel_difference": 7.0,
+                    "subject_hierarchy_score": 6.0,
+                    "thumbnail_subject_read_score": 6.0,
+                    "color_quality_score": 7.0,
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 8.0,
+                    "crop_dependency": "secondary",
+                    "non_crop_tonal_improvement": 5.8,
+                    "subject_separation_improvement": 5.7,
+                    "color_intent_improvement": 5.9,
+                    "highlight_shadow_quality": 5.2,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "weak",
+                },
+            }
+
+        _write_jpeg(tmp_path / "base.jpg", color="blue")
+        _write_jpeg(tmp_path / "pred.jpg", color="green")
+        (tmp_path / "profile.pp3").write_text("[Version]\nAppVersion=5.11\n", encoding="utf-8")
+
+        async def fake_before_after(*args, **kwargs):
+            return {
+                "before": {"preview_path": str(tmp_path / "base.jpg")},
+                "after": {"preview_path": str(tmp_path / "pred.jpg")},
+            }
+
+        with (
+            patch("rawtherapee_mcp.evaluation.SCORES_CSV", csv_path),
+            patch("rawtherapee_mcp.evaluation.preview_raw", side_effect=fake_preview_raw),
+            patch("rawtherapee_mcp.evaluation.auto_edit_predictive", side_effect=fake_auto_edit),
+            patch("rawtherapee_mcp.evaluation.preview_before_after", side_effect=fake_before_after),
+        ):
+            report = asyncio.run(
+                run_predictive_evaluation(
+                    raw_path=str(raw_file),
+                    brief="warm natural travel",
+                    intensity="medium",
+                    output_root=tmp_path / "eval-parse",
+                )
+            )
+
+        human_scores = report["manual_score_comparison"]["human_scores"]
+        assert human_scores["perceived_non_crop_improvement"] == "weak"
 
     def test_cli_script_exits_cleanly_with_mocked_runner(self, monkeypatch) -> None:
         module = _load_cli_module()

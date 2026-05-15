@@ -1312,6 +1312,7 @@ def _predictive_export_decision(validation_allowed: bool, scores: dict[str, Any]
     global_visible_difference_score = float(
         scores.get("global_visible_difference_score", scores.get("visible_difference_score", 0.0))
     )
+    global_pixel_difference = float(scores.get("global_pixel_difference", global_visible_difference_score))
     subject_hierarchy_score = float(
         scores.get("subject_hierarchy_score", scores.get("hierarchy_improvement_score", 0.0))
     )
@@ -1336,15 +1337,41 @@ def _predictive_export_decision(validation_allowed: bool, scores: dict[str, Any]
         naturalness_score=naturalness_score,
         artifact_free_score=artifact_free_score,
         crop_dependency=crop_dependency,
+        global_pixel_difference=global_pixel_difference,
+        non_crop_tonal_improvement=float(scores.get("non_crop_tonal_improvement", 0.0)),
+        subject_separation_improvement=float(scores.get("subject_separation_improvement", 0.0)),
+        color_intent_improvement=float(scores.get("color_intent_improvement", 0.0)),
+        highlight_shadow_quality=float(scores.get("highlight_shadow_quality", 0.0)),
+        composition_improvement=float(scores.get("composition_improvement", 0.0)),
+        crop_contribution=float(scores.get("crop_contribution", 0.0)),
+        perceived_non_crop_improvement=(
+            str(scores["perceived_non_crop_improvement"])
+            if "perceived_non_crop_improvement" in scores
+            else None
+        ),
     )
     return {
         "global_visible_difference_score": global_visible_difference_score,
+        "global_pixel_difference": global_pixel_difference,
         "subject_hierarchy_score": subject_hierarchy_score,
         "thumbnail_subject_read_score": thumbnail_subject_read_score,
         "color_quality_score": color_quality_score,
         "naturalness_score": naturalness_score,
         "artifact_free_score": artifact_free_score,
         "crop_dependency": crop_dependency,
+        "non_crop_tonal_improvement": float(scores.get("non_crop_tonal_improvement", 0.0)),
+        "subject_separation_improvement": float(scores.get("subject_separation_improvement", 0.0)),
+        "color_intent_improvement": float(scores.get("color_intent_improvement", 0.0)),
+        "highlight_shadow_quality": float(scores.get("highlight_shadow_quality", 0.0)),
+        "composition_improvement": float(scores.get("composition_improvement", 0.0)),
+        "crop_contribution": float(scores.get("crop_contribution", 0.0)),
+        "perceived_non_crop_improvement": decision["perceived_non_crop_improvement"],
+        "meaningful_non_crop_edit": decision["meaningful_non_crop_edit"],
+        "non_crop_quality_pass_count": decision["non_crop_quality_pass_count"],
+        "non_crop_quality_pass_fields": decision["non_crop_quality_pass_fields"],
+        "crop_only_improvement": decision["crop_only_improvement"],
+        "non_crop_edit_quality": decision["non_crop_edit_quality"],
+        "non_crop_edit_quality_reason": decision["non_crop_edit_quality_reason"],
         "hierarchy_boost_applied": bool(scores.get("hierarchy_boost_applied", False)),
         "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
         "decision": decision["decision"],
@@ -1492,6 +1519,7 @@ async def auto_edit_predictive(
             "clamped": plan["clamped"],
         },
         "blocked_controls_considered": plan["blocked_controls_considered"],
+        "approved_curves_used": plan.get("approved_curves_used", []),
         "verification_contract": plan["verification_contract"],
         "scores": normalized_scores,
         "legacy_status": "legacy visual-move candidate generator is deprecated for autonomous default use",

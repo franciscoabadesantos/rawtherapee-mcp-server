@@ -382,10 +382,12 @@ class TestEditorialWorkflowTools:
             )
 
         assert "error" not in result
-        assert result["decision"] in {"proof_plus", "export"}
+        assert result["decision"] in {"proof_only", "failed_edit_quality", "proof_plus", "export"}
         assert result["validation"]["allowed"] is True
+        assert "perceived_non_crop_improvement" in result["scores"]
         assert "local_contrast" not in result["parameters"]
-        assert "tone_curve" not in result["parameters"]
+        assert result["parameters"]["tone_curve"]["curve_mode"] == "Standard"
+        assert result["parameters"]["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
         assert "rgb_curves" not in result["parameters"]
         hsv = result["parameters"].get("hsv_equalizer", {})
         assert "h_curve" not in hsv
@@ -501,10 +503,12 @@ class TestEditorialWorkflowTools:
         assert params["microcontrast"]["amount"] >= 8
         assert params["vibrance"]["pastels"] >= 8
         assert params["vibrance"]["saturated"] in range(3, 6)
+        assert params["tone_curve"]["curve_mode"] == "Standard"
+        assert params["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
+        assert plan["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
         validation = validate_autonomous_parameters(params)
         assert validation.allowed is True
         assert "local_contrast" not in params
-        assert "tone_curve" not in params
         assert "rgb_curves" not in params
         assert "hsv_equalizer" not in params
 
@@ -522,6 +526,28 @@ class TestEditorialWorkflowTools:
         )
 
         assert plan["scores"]["hierarchy_boost_applied"] is False
+        assert "tone_curve" not in plan["parameters"]
+        assert plan["approved_curves_used"] == []
+
+    def test_predictive_approved_curve_is_not_used_in_avoid_context(self):
+        plan = build_predictive_edit_plan(
+            style="night portrait travel",
+            intensity="medium",
+            user_brief="night portrait with fragile skin tones",
+            diagnosis_payload={
+                "style": "night portrait travel",
+                "intensity": "medium",
+                "diagnosis": [
+                    {"issue": "flat_midtone_geometry", "severity": 0.8, "evidence": "flat rails"},
+                    {"issue": "weak_subject_readability", "severity": 0.8, "evidence": "weak subject"},
+                    {"issue": "low_thumbnail_impact", "severity": 0.7, "evidence": "weak thumbnail"},
+                ],
+                "crop_need": "low",
+            },
+        )
+
+        assert "tone_curve" not in plan["parameters"]
+        assert plan["approved_curves_used"] == []
 
     def test_predictive_medium_dull_color_presence_uses_stronger_vibrance(self):
         plan = build_predictive_edit_plan(
@@ -633,7 +659,7 @@ class TestEditorialWorkflowTools:
             result = await auto_edit_predictive(mock_ctx, str(raw_file), export=False)
 
         assert "error" not in result
-        assert result["decision"] in {"proof_plus", "export"}
+        assert result["decision"] in {"proof_only", "failed_edit_quality", "proof_plus", "export"}
 
     async def test_auto_edit_predictive_export_gate_rejects_weak_or_crop_primary(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -659,6 +685,38 @@ class TestEditorialWorkflowTools:
 
         assert result["decision"] == "proof_only"
         assert result["scores"]["export_gate_passed"] is False
+
+    async def test_auto_edit_predictive_reports_approved_curve_usage(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (1000, 700), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            result = await auto_edit_predictive(
+                mock_ctx,
+                str(raw_file),
+                style="warm natural travel",
+                intensity="medium",
+                user_brief="Barcelona tram travel frame",
+                diagnosis_override={
+                    "style": "warm natural travel",
+                    "intensity": "medium",
+                    "diagnosis": [
+                        {"issue": "flat_midtone_geometry", "severity": 0.8, "evidence": "flat rails"},
+                        {"issue": "weak_subject_readability", "severity": 0.8, "evidence": "weak subject"},
+                        {"issue": "low_thumbnail_impact", "severity": 0.7, "evidence": "weak thumbnail"},
+                    ],
+                    "crop_need": "low",
+                },
+            )
+
+        assert result["approved_curves_used"]
+        assert result["approved_curves_used"][0]["id"] == "tone_curve.midtone_pop_v1"
+        assert result["parameters"]["tone_curve"]["curve"] == "3;0;0;0.45;0.52;1;1;"
 
     async def test_generate_crop_candidates_returns_safe_crop_only_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"

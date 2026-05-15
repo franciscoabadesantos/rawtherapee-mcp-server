@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from rawtherapee_mcp.control_policy import (
+    find_approved_curve,
     get_control_risk,
+    get_approved_curve,
     is_control_allowed_autonomous,
     validate_autonomous_parameters,
 )
@@ -26,6 +28,21 @@ class TestControlPolicy:
         assert is_control_allowed_autonomous("HSV Equalizer", "SCurve", "0;")
         assert not is_control_allowed_autonomous("HSV Equalizer", "SCurve", "0;0.1;1;")
 
+    def test_approved_exposure_curve_passes_exact_value_validation(self) -> None:
+        curve = get_approved_curve("tone_curve.midtone_pop_v1")
+        assert curve is not None
+        assert is_control_allowed_autonomous("Exposure", "CurveMode", curve["curve_mode"])
+        assert is_control_allowed_autonomous("Exposure", "Curve", curve["curve_string"])
+        assert is_control_allowed_autonomous("Exposure", "Curve2", curve["curve2"])
+
+    def test_arbitrary_exposure_curve_is_still_blocked(self) -> None:
+        assert not is_control_allowed_autonomous("Exposure", "Curve", "3;0;0;0.5;0.7;1;1;")
+
+    def test_find_approved_curve_resolves_metadata_from_exact_value(self) -> None:
+        curve = find_approved_curve("Exposure", "Curve", "3;0;0;0.45;0.52;1;1;")
+        assert curve is not None
+        assert curve["id"] == "tone_curve.midtone_pop_v1"
+
     def test_unknown_controls_default_to_manual_only(self) -> None:
         assert not is_control_allowed_autonomous("Unknown Section", "Unknown Key", 1)
 
@@ -41,6 +58,14 @@ class TestControlPolicy:
         blocked_ids = {item.control_id for item in result.blocked_controls}
         assert "Local Contrast.Amount" in blocked_ids
         assert "HSV Equalizer.HCurve" in blocked_ids
+
+    def test_validate_autonomous_parameters_blocks_arbitrary_curve_strings(self) -> None:
+        result = validate_autonomous_parameters(
+            {"tone_curve": {"curve_mode": "Standard", "curve": "3;0;0;0.5;0.7;1;1;", "curve2": "0;"}}
+        )
+
+        assert not result.allowed
+        assert any(item.control_id == "Exposure.Curve" for item in result.blocked_controls)
 
     def test_validate_autonomous_parameters_blocks_out_of_range_values(self) -> None:
         result = validate_autonomous_parameters({"exposure": {"contrast": 80}})

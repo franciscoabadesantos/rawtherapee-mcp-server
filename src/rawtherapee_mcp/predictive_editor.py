@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, TypeGuard
 
-from rawtherapee_mcp.control_policy import is_control_allowed_autonomous, load_manifest
+from rawtherapee_mcp.control_policy import (
+    get_approved_curve,
+    is_control_allowed_autonomous,
+    load_manifest,
+)
 
 DIAGNOSIS_VOCAB = {
     "flat_midtone_geometry",
@@ -29,6 +33,13 @@ EXPORT_SCORE_MINIMUMS = {
     "artifact_free_score": 8.0,
     "naturalness_score": 7.0,
 }
+MEANINGFUL_NON_CROP_MINIMUM = 7.0
+NON_CROP_PASS_FIELDS = (
+    "subject_separation_improvement",
+    "non_crop_tonal_improvement",
+    "color_intent_improvement",
+    "highlight_shadow_quality",
+)
 
 _CONTROL_TO_FRIENDLY: dict[str, tuple[str, str]] = {
     "Exposure.Compensation": ("exposure", "compensation"),
@@ -37,6 +48,9 @@ _CONTROL_TO_FRIENDLY: dict[str, tuple[str, str]] = {
     "Exposure.Black": ("exposure", "black"),
     "Exposure.HighlightCompr": ("exposure", "highlight_compression"),
     "Exposure.HighlightComprThreshold": ("highlight_rolloff", "highlight_compression_threshold"),
+    "Exposure.CurveMode": ("tone_curve", "curve_mode"),
+    "Exposure.Curve": ("tone_curve", "curve"),
+    "Exposure.Curve2": ("tone_curve", "curve2"),
     "White Balance.Temperature": ("white_balance", "temperature"),
     "White Balance.Green": ("white_balance", "green"),
     "Shadows & Highlights.Highlights": ("highlight_rolloff", "highlights"),
@@ -102,6 +116,53 @@ def _parse_delta(value: str) -> float | None:
         return float(stripped)
     except ValueError:
         return None
+
+
+def _clamp_score(value: float, *, lower: float = 0.0, upper: float = 10.0) -> float:
+    return round(max(lower, min(upper, value)), 1)
+
+
+def _perceived_non_crop_improvement(
+    *,
+    pass_count: int,
+    strongest_score: float,
+    crop_contribution: float,
+) -> str:
+    if pass_count >= 3 or strongest_score >= 8.5:
+        return "strong"
+    if pass_count >= 2:
+        return "moderate"
+    if strongest_score >= 5.5 and crop_contribution < 7.0:
+        return "weak"
+    return "none"
+
+
+def _non_crop_quality_reason(
+    *,
+    quality_passed: bool,
+    pass_fields: list[str],
+    perceived_non_crop_improvement: str,
+    crop_contribution: float,
+) -> str:
+    labels = {
+        "subject_separation_improvement": "subject separation",
+        "non_crop_tonal_improvement": "midtone depth",
+        "color_intent_improvement": "color presence",
+        "highlight_shadow_quality": "highlight/shadow control",
+    }
+    if quality_passed:
+        visible = [labels[field] for field in pass_fields[:3]]
+        if len(visible) > 1:
+            joined = ", ".join(visible[:-1]) + f", and {visible[-1]}"
+        else:
+            joined = visible[0]
+        return f"{joined} improve visibly before any crop is applied."
+    if crop_contribution >= 7.0 and perceived_non_crop_improvement in {"none", "weak"}:
+        return "Framing changes carry most of the gain while the base tonal/color edit remains weak before crop."
+    return (
+        "Tonal/color changes are numerically visible but do not materially improve subject separation "
+        "or visual intent."
+    )
 
 
 def infer_predictive_diagnosis(
@@ -287,6 +348,68 @@ def _hierarchy_boost_controls(
             _suggested_value("Exposure.Compensation", readability_severity, 1.0, scale, strength=0.50),
         ),
     ], True
+
+
+def _curve_avoid_contexts(
+    *,
+    style: str,
+    user_brief: str | None,
+    issue_names: set[str],
+) -> set[str]:
+    text = f"{style} {user_brief or ''}".lower()
+    avoid: set[str] = set()
+    if any(token in text for token in ("portrait", "skin", "face")):
+        avoid.add("portrait_skin_fragile")
+    if any(token in text for token in ("night", "iso", "high iso", "low light")):
+        avoid.add("night_high_iso")
+    if {"bright_sky_needs_control", "washed_highlights"} & issue_names:
+        avoid.add("already_high_contrast")
+    return avoid
+
+
+def _approved_curve_controls(
+    *,
+    diagnosis: list[dict[str, Any]],
+    style: str,
+    user_brief: str | None,
+) -> tuple[list[tuple[str, object]], list[dict[str, Any]]]:
+    issue_names = _issue_names(diagnosis)
+    hierarchy_hits = issue_names & {"flat_midtone_geometry", "weak_subject_readability", "low_thumbnail_impact"}
+    if len(hierarchy_hits) < 2:
+        return [], []
+
+    curve = get_approved_curve("tone_curve.midtone_pop_v1")
+    if not curve or curve.get("autonomous_allowed") is not True:
+        return [], []
+
+    allowed_contexts = {str(item) for item in curve.get("allowed_contexts", []) if isinstance(item, str)}
+    if not hierarchy_hits & allowed_contexts:
+        return [], []
+
+    avoid_contexts = {str(item) for item in curve.get("avoid_contexts", []) if isinstance(item, str)}
+    active_avoid_contexts = _curve_avoid_contexts(style=style, user_brief=user_brief, issue_names=issue_names)
+    if active_avoid_contexts & avoid_contexts:
+        return [], []
+
+    curve_mode = str(curve.get("curve_mode", "Standard"))
+    curve_string = str(curve.get("curve_string", ""))
+    curve2 = str(curve.get("curve2", "0;"))
+    if not curve_string:
+        return [], []
+
+    reason = " + ".join(sorted(hierarchy_hits))
+    return [
+        ("Exposure.CurveMode", curve_mode),
+        ("Exposure.Curve", curve_string),
+        ("Exposure.Curve2", curve2),
+    ], [
+        {
+            "id": str(curve.get("id", "tone_curve.midtone_pop_v1")),
+            "reason": reason,
+            "risk": "may increase harshness; checked by export gate",
+            "intended_effect": str(curve.get("intended_effect", "")),
+        }
+    ]
 
 
 def _planned_controls_from_diagnosis(
@@ -477,19 +600,56 @@ def score_predictive_export_decision(
     naturalness_score: float,
     artifact_free_score: float,
     crop_dependency: str,
+    global_pixel_difference: float | None = None,
+    non_crop_tonal_improvement: float = 0.0,
+    subject_separation_improvement: float = 0.0,
+    color_intent_improvement: float = 0.0,
+    highlight_shadow_quality: float = 0.0,
+    composition_improvement: float = 0.0,
+    crop_contribution: float = 0.0,
+    perceived_non_crop_improvement: str | None = None,
 ) -> dict[str, Any]:
     """Return strict export/proof decision from separated verification scores."""
+    normalized_global_difference = float(global_pixel_difference or global_visible_difference_score)
+    non_crop_scores = {
+        "subject_separation_improvement": float(subject_separation_improvement),
+        "non_crop_tonal_improvement": float(non_crop_tonal_improvement),
+        "color_intent_improvement": float(color_intent_improvement),
+        "highlight_shadow_quality": float(highlight_shadow_quality),
+    }
+    non_crop_pass_fields = [
+        field for field, value in non_crop_scores.items() if value >= MEANINGFUL_NON_CROP_MINIMUM
+    ]
+    non_crop_quality_passed = len(non_crop_pass_fields) >= 2
+    strongest_non_crop_score = max(non_crop_scores.values(), default=0.0)
+    normalized_crop_contribution = float(crop_contribution)
+    normalized_perceived = perceived_non_crop_improvement or _perceived_non_crop_improvement(
+        pass_count=len(non_crop_pass_fields),
+        strongest_score=strongest_non_crop_score,
+        crop_contribution=normalized_crop_contribution,
+    )
+    crop_only_improvement = (
+        normalized_crop_contribution >= 7.0
+        and float(composition_improvement) >= 7.0
+        and not non_crop_quality_passed
+    )
     export_gate_passed = (
         validation_allowed
+        and non_crop_quality_passed
         and subject_hierarchy_score >= EXPORT_SCORE_MINIMUMS["subject_hierarchy_score"]
         and thumbnail_subject_read_score >= EXPORT_SCORE_MINIMUMS["thumbnail_subject_read_score"]
         and artifact_free_score >= EXPORT_SCORE_MINIMUMS["artifact_free_score"]
         and naturalness_score >= EXPORT_SCORE_MINIMUMS["naturalness_score"]
         and crop_dependency != "primary"
+        and normalized_crop_contribution < 7.0
     )
     if export_gate_passed:
         decision = "export"
-    elif crop_dependency == "primary" or global_visible_difference_score < 5.5:
+    elif crop_only_improvement or crop_dependency == "primary":
+        decision = "crop_only_improvement"
+    elif not non_crop_quality_passed:
+        decision = "failed_edit_quality" if normalized_global_difference >= 5.5 else "proof_only"
+    elif normalized_perceived in {"none", "weak"}:
         decision = "proof_only"
     else:
         decision = "proof_plus"
@@ -497,12 +657,37 @@ def score_predictive_export_decision(
     return {
         "decision": decision,
         "export_gate_passed": export_gate_passed,
+        "global_pixel_difference": normalized_global_difference,
+        "non_crop_tonal_improvement": float(non_crop_tonal_improvement),
+        "subject_separation_improvement": float(subject_separation_improvement),
+        "color_intent_improvement": float(color_intent_improvement),
+        "highlight_shadow_quality": float(highlight_shadow_quality),
+        "composition_improvement": float(composition_improvement),
+        "crop_contribution": normalized_crop_contribution,
+        "perceived_non_crop_improvement": normalized_perceived,
+        "meaningful_non_crop_edit": non_crop_quality_passed,
+        "non_crop_quality_pass_count": len(non_crop_pass_fields),
+        "non_crop_quality_pass_fields": non_crop_pass_fields,
+        "crop_only_improvement": crop_only_improvement,
+        "non_crop_edit_quality": "pass" if non_crop_quality_passed else "fail",
+        "non_crop_edit_quality_reason": _non_crop_quality_reason(
+            quality_passed=non_crop_quality_passed,
+            pass_fields=non_crop_pass_fields,
+            perceived_non_crop_improvement=normalized_perceived,
+            crop_contribution=normalized_crop_contribution,
+        ),
         "gate_requirements": {
+            "meaningful_non_crop_requirements": {
+                "minimum_score": MEANINGFUL_NON_CROP_MINIMUM,
+                "minimum_pass_count": 2,
+                "fields": list(NON_CROP_PASS_FIELDS),
+            },
             "subject_hierarchy_score_min": EXPORT_SCORE_MINIMUMS["subject_hierarchy_score"],
             "thumbnail_subject_read_score_min": EXPORT_SCORE_MINIMUMS["thumbnail_subject_read_score"],
             "artifact_free_score_min": EXPORT_SCORE_MINIMUMS["artifact_free_score"],
             "naturalness_score_min": EXPORT_SCORE_MINIMUMS["naturalness_score"],
             "crop_dependency": "not primary",
+            "crop_contribution_max_for_export": 6.9,
             "validation_allowed": True,
         },
         "scoring_guidance": (
@@ -529,6 +714,12 @@ def build_predictive_edit_plan(
         diagnosis_items, intensity
     )
     merged_controls = _merge_control_values(issue_controls)
+    approved_curve_controls, approved_curves_used = _approved_curve_controls(
+        diagnosis=diagnosis_items,
+        style=style,
+        user_brief=user_brief,
+    )
+    merged_controls = _merge_control_values(approved_curve_controls + list(merged_controls.items()))
 
     # Hard block banned primitives from planner output, but report consideration.
     if "Local Contrast.Amount" in merged_controls:
@@ -572,39 +763,54 @@ def build_predictive_edit_plan(
     crop_dependency = "primary" if parameters and not non_crop_groups else "secondary"
 
     severity_sum = sum(float(item.get("severity", 0.0)) for item in diagnosis_items)
-    global_visible_difference_score = min(10.0, round(5.5 + (severity_sum * 1.2) + (len(non_crop_groups) * 0.3), 1))
-    subject_hierarchy_score = min(
-        10.0,
-        round(
-            4.5
-            + (0.7 if "flat_midtone_geometry" in issue_names else 0.0)
-            + (0.8 if "weak_subject_readability" in issue_names else 0.0)
-            + (0.2 if "dull_color_presence" in issue_names else 0.0)
-            + (0.2 if "low_thumbnail_impact" in issue_names else 0.0),
-            1,
-        ),
+    global_visible_difference_score = _clamp_score(5.5 + (severity_sum * 1.2) + (len(non_crop_groups) * 0.3))
+    subject_separation_improvement = _clamp_score(
+        4.2
+        + (1.1 if "flat_midtone_geometry" in issue_names else 0.0)
+        + (1.0 if "weak_subject_readability" in issue_names else 0.0)
+        + (0.5 if "low_thumbnail_impact" in issue_names else 0.0)
+        + (0.2 if "dull_color_presence" in issue_names else 0.0)
     )
-    thumbnail_subject_read_score = min(
-        10.0,
-        round(
-            4.5
-            + (0.7 if "low_thumbnail_impact" in issue_names else 0.0)
-            + (0.6 if "weak_subject_readability" in issue_names else 0.0)
-            + (0.4 if "flat_midtone_geometry" in issue_names else 0.0)
-            + (0.2 if "dull_color_presence" in issue_names else 0.0),
-            1,
-        ),
+    non_crop_tonal_improvement = _clamp_score(
+        4.1
+        + (1.1 if "flat_midtone_geometry" in issue_names else 0.0)
+        + (0.9 if "blocked_shadows" in issue_names else 0.0)
+        + (0.7 if "bright_sky_needs_control" in issue_names else 0.0)
+        + (0.5 if "washed_highlights" in issue_names else 0.0)
     )
-    color_quality_score = min(
-        10.0,
-        round(
-            6.5
-            + (0.6 if "dull_color_presence" in issue_names else 0.0)
-            + (0.2 if "too_cool_or_clinical" in issue_names else 0.0)
-            - (0.4 if "too_warm_or_orange" in issue_names else 0.0),
-            1,
-        ),
+    color_intent_improvement = _clamp_score(
+        4.2
+        + (1.5 if "dull_color_presence" in issue_names else 0.0)
+        + (0.9 if "too_cool_or_clinical" in issue_names else 0.0)
+        + (0.7 if "too_warm_or_orange" in issue_names else 0.0)
+        + (0.5 if "green_yellow_cast" in issue_names else 0.0)
     )
+    highlight_shadow_quality = _clamp_score(
+        4.0
+        + (1.4 if "bright_sky_needs_control" in issue_names else 0.0)
+        + (1.2 if "washed_highlights" in issue_names else 0.0)
+        + (1.0 if "blocked_shadows" in issue_names else 0.0)
+    )
+    composition_improvement = _clamp_score(
+        4.0
+        + (2.3 if "crop_distraction_edges" in issue_names else 0.0)
+        + (1.7 if "needs_mild_straightening_or_geometry" in issue_names else 0.0)
+    )
+    crop_contribution = _clamp_score(
+        2.0
+        + (4.0 if crop_dependency == "primary" else 0.0)
+        + (2.8 if "crop_distraction_edges" in issue_names else 0.0)
+        + (1.2 if "needs_mild_straightening_or_geometry" in issue_names else 0.0)
+    )
+    subject_hierarchy_score = _clamp_score(subject_separation_improvement)
+    thumbnail_subject_read_score = _clamp_score(
+        4.4
+        + (0.8 if "low_thumbnail_impact" in issue_names else 0.0)
+        + (0.7 if "weak_subject_readability" in issue_names else 0.0)
+        + (0.5 if "flat_midtone_geometry" in issue_names else 0.0)
+        + (0.2 if "dull_color_presence" in issue_names else 0.0)
+    )
+    color_quality_score = _clamp_score(color_intent_improvement + 0.4)
     naturalness_score = 8.0
     artifact_free_score = 9.0
 
@@ -612,8 +818,12 @@ def build_predictive_edit_plan(
         global_visible_difference_score = min(global_visible_difference_score, 5.4)
         subject_hierarchy_score = min(subject_hierarchy_score, 5.5)
         thumbnail_subject_read_score = min(thumbnail_subject_read_score, 5.5)
+        subject_separation_improvement = min(subject_separation_improvement, 5.5)
+        non_crop_tonal_improvement = min(non_crop_tonal_improvement, 5.5)
+        color_intent_improvement = min(color_intent_improvement, 5.5)
+        highlight_shadow_quality = min(highlight_shadow_quality, 5.5)
 
-    gate_decision = score_predictive_export_decision(
+    quality_seed = score_predictive_export_decision(
         validation_allowed=True,
         global_visible_difference_score=global_visible_difference_score,
         subject_hierarchy_score=subject_hierarchy_score,
@@ -622,7 +832,15 @@ def build_predictive_edit_plan(
         naturalness_score=naturalness_score,
         artifact_free_score=artifact_free_score,
         crop_dependency=crop_dependency,
+        global_pixel_difference=global_visible_difference_score,
+        non_crop_tonal_improvement=non_crop_tonal_improvement,
+        subject_separation_improvement=subject_separation_improvement,
+        color_intent_improvement=color_intent_improvement,
+        highlight_shadow_quality=highlight_shadow_quality,
+        composition_improvement=composition_improvement,
+        crop_contribution=crop_contribution,
     )
+    gate_decision = quality_seed
     hierarchy_improvement_score = subject_hierarchy_score
     visible_difference_score = global_visible_difference_score
 
@@ -649,15 +867,28 @@ def build_predictive_edit_plan(
         "parameters": parameters,
         "expected_effect": expected_effect,
         "blocked_controls_considered": blocked_controls_considered,
+        "approved_curves_used": approved_curves_used,
         "clamped": clamped,
         "scores": {
             "global_visible_difference_score": global_visible_difference_score,
+            "global_pixel_difference": global_visible_difference_score,
             "subject_hierarchy_score": subject_hierarchy_score,
             "thumbnail_subject_read_score": thumbnail_subject_read_score,
             "color_quality_score": color_quality_score,
             "naturalness_score": naturalness_score,
             "artifact_free_score": artifact_free_score,
             "crop_dependency": crop_dependency,
+            "non_crop_tonal_improvement": non_crop_tonal_improvement,
+            "subject_separation_improvement": subject_separation_improvement,
+            "color_intent_improvement": color_intent_improvement,
+            "highlight_shadow_quality": highlight_shadow_quality,
+            "composition_improvement": composition_improvement,
+            "crop_contribution": crop_contribution,
+            "perceived_non_crop_improvement": gate_decision["perceived_non_crop_improvement"],
+            "meaningful_non_crop_edit": gate_decision["meaningful_non_crop_edit"],
+            "non_crop_edit_quality": gate_decision["non_crop_edit_quality"],
+            "non_crop_edit_quality_reason": gate_decision["non_crop_edit_quality_reason"],
+            "approved_curves_used": approved_curves_used,
             "hierarchy_boost_applied": hierarchy_boost_applied,
             "artifact_check": "pass" if artifact_free_score >= 8.0 else "fail",
             "decision": gate_decision["decision"],

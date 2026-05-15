@@ -11,6 +11,36 @@
     "mode": "manual_only",
     "reason": "Unknown PP3 sections/keys are blocked until evidence is captured."
   },
+  "approved_curves": {
+    "tone_curve.midtone_pop_v1": {
+      "id": "tone_curve.midtone_pop_v1",
+      "pp3_section": "Exposure",
+      "pp3_key": "Curve",
+      "curve_mode": "Standard",
+      "curve2": "0;",
+      "curve_string": "3;0;0;0.45;0.52;1;1;",
+      "intended_effect": "stronger midtone separation and subject depth",
+      "allowed_contexts": [
+        "flat_midtone_geometry",
+        "weak_subject_readability",
+        "low_thumbnail_impact"
+      ],
+      "avoid_contexts": [
+        "already_high_contrast",
+        "portrait_skin_fragile",
+        "night_high_iso"
+      ],
+      "risk_notes": [
+        "can make sky or rail contrast too hard if stacked aggressively"
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Exposure.Curve/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Curve/notes.md",
+        "docs/evaluations/runs_phase5/IMG_1279/report.json"
+      ],
+      "autonomous_allowed": true
+    }
+  },
   "controls": {
     "Exposure.Compensation": {
       "pp3_section": "Exposure",
@@ -219,6 +249,73 @@
       ],
       "confidence": "low",
       "pending_evidence": true
+    },
+    "Exposure.CurveMode": {
+      "pp3_section": "Exposure",
+      "pp3_key": "CurveMode",
+      "ui_name": "Exposure > Tone Curve > Curve mode",
+      "autonomous_allowed": "approved_values_only",
+      "approved_values": [
+        "Standard"
+      ],
+      "manual_allowed": true,
+      "value_type": "string",
+      "expected_effect": "selects the exact approved tone-curve interpolation mode",
+      "risks": [
+        "curve renders unpredictably if the mode drifts from the approved preset"
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Exposure.Curve/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Curve/notes.md"
+      ],
+      "confidence": "medium"
+    },
+    "Exposure.Curve": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Curve",
+      "ui_name": "Exposure > Tone Curve",
+      "autonomous_allowed": "approved_curve_only",
+      "approved_values": [
+        "3;0;0;0.45;0.52;1;1;"
+      ],
+      "manual_allowed": true,
+      "value_type": "pp3_curve_string",
+      "expected_effect": "controlled midtone depth and subject separation lift",
+      "risks": [
+        "harsh midtone edges if stacked with strong contrast or microcontrast",
+        "harder sky transitions in already-contrasty scenes"
+      ],
+      "interactions": [
+        "Should be paired only with approved CurveMode/Curve2 values from the same approved preset."
+      ],
+      "evidence": [
+        "docs/reference/pp3_evidence/Exposure.Curve/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Curve/notes.md",
+        "docs/evaluations/runs_phase5/IMG_1279/report.json"
+      ],
+      "confidence": "medium"
+    },
+    "Exposure.Curve2": {
+      "pp3_section": "Exposure",
+      "pp3_key": "Curve2",
+      "ui_name": "Exposure > Tone Curve 2",
+      "autonomous_allowed": "approved_values_only",
+      "approved_values": [
+        "0;"
+      ],
+      "manual_allowed": true,
+      "value_type": "pp3_curve_string",
+      "expected_effect": "keeps the secondary tone curve neutral when the approved preset is used",
+      "risks": [
+        "secondary curve activation can create uncontrolled tonal interactions"
+      ],
+      "evidence": [
+        "tests/test_pp3_generator.py",
+        "docs/reference/pp3_evidence/Exposure.Curve/diff.json",
+        "docs/reference/pp3_evidence/Exposure.Curve/notes.md"
+      ],
+      "confidence": "medium"
     },
     "White Balance.Temperature": {
       "pp3_section": "White Balance",

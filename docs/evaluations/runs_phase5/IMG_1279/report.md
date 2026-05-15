@@ -17,6 +17,11 @@
 ## Parameters
 ```json
 {
+  "tone_curve": {
+    "curve_mode": "Standard",
+    "curve": "3;0;0;0.45;0.52;1;1;",
+    "curve2": "0;"
+  },
   "exposure": {
     "contrast": 12,
     "compensation": 0.358,
@@ -49,6 +54,18 @@
 - midtone rail/street geometry should gain clearer depth
 - color presence should increase without fake HDR or phone-filter saturation
 
+## Approved Curves
+```json
+[
+  {
+    "id": "tone_curve.midtone_pop_v1",
+    "reason": "flat_midtone_geometry + low_thumbnail_impact + weak_subject_readability",
+    "risk": "may increase harshness; checked by export gate",
+    "intended_effect": "stronger midtone separation and subject depth"
+  }
+]
+```
+
 ## Validation
 ```json
 {
@@ -61,25 +78,27 @@
 ## Export Gate
 ```json
 {
-  "global_visible_difference_score": 9.6,
-  "global_pixel_difference": 9.6,
-  "subject_hierarchy_score": 6.4,
-  "thumbnail_subject_read_score": 6.4,
-  "color_quality_score": 7.1,
+  "global_visible_difference_score": 9.9,
+  "global_pixel_difference": 9.9,
+  "subject_hierarchy_score": 7.0,
+  "thumbnail_subject_read_score": 6.6,
+  "color_quality_score": 6.1,
   "naturalness_score": 8.0,
   "artifact_free_score": 9.0,
   "artifact_check": "pass",
   "crop_dependency": "secondary",
-  "non_crop_tonal_improvement": 6.2,
-  "subject_separation_improvement": 6.3,
-  "color_intent_improvement": 6.5,
-  "highlight_shadow_quality": 5.9,
-  "composition_improvement": 6.0,
-  "crop_contribution": 6.8,
+  "non_crop_tonal_improvement": 5.2,
+  "subject_separation_improvement": 7.0,
+  "color_intent_improvement": 5.7,
+  "highlight_shadow_quality": 4.0,
+  "composition_improvement": 4.0,
+  "crop_contribution": 2.0,
   "perceived_non_crop_improvement": "weak",
   "meaningful_non_crop_edit": false,
-  "non_crop_quality_pass_count": 0,
-  "non_crop_quality_pass_fields": [],
+  "non_crop_quality_pass_count": 1,
+  "non_crop_quality_pass_fields": [
+    "subject_separation_improvement"
+  ],
   "crop_only_improvement": false,
   "non_crop_edit_quality": "fail",
   "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
@@ -106,8 +125,8 @@
     "validation_allowed": true
   },
   "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
-  "visible_difference_score": 9.6,
-  "hierarchy_improvement_score": 6.4,
+  "visible_difference_score": 9.9,
+  "hierarchy_improvement_score": 7.0,
   "export_requested": false,
   "runtime_decision": "failed_edit_quality"
 }
@@ -120,25 +139,27 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
 ```json
 {
   "automated_scores": {
-    "global_visible_difference_score": 9.6,
-    "global_pixel_difference": 9.6,
-    "subject_hierarchy_score": 6.4,
-    "thumbnail_subject_read_score": 6.4,
-    "color_quality_score": 7.1,
+    "global_visible_difference_score": 9.9,
+    "global_pixel_difference": 9.9,
+    "subject_hierarchy_score": 7.0,
+    "thumbnail_subject_read_score": 6.6,
+    "color_quality_score": 6.1,
     "naturalness_score": 8.0,
     "artifact_free_score": 9.0,
     "artifact_check": "pass",
     "crop_dependency": "secondary",
-    "non_crop_tonal_improvement": 6.2,
-    "subject_separation_improvement": 6.3,
-    "color_intent_improvement": 6.5,
-    "highlight_shadow_quality": 5.9,
-    "composition_improvement": 6.0,
-    "crop_contribution": 6.8,
+    "non_crop_tonal_improvement": 5.2,
+    "subject_separation_improvement": 7.0,
+    "color_intent_improvement": 5.7,
+    "highlight_shadow_quality": 4.0,
+    "composition_improvement": 4.0,
+    "crop_contribution": 2.0,
     "perceived_non_crop_improvement": "weak",
     "meaningful_non_crop_edit": false,
-    "non_crop_quality_pass_count": 0,
-    "non_crop_quality_pass_fields": [],
+    "non_crop_quality_pass_count": 1,
+    "non_crop_quality_pass_fields": [
+      "subject_separation_improvement"
+    ],
     "crop_only_improvement": false,
     "non_crop_edit_quality": "fail",
     "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
@@ -165,8 +186,8 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
       "validation_allowed": true
     },
     "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
-    "visible_difference_score": 9.6,
-    "hierarchy_improvement_score": 6.4,
+    "visible_difference_score": 9.9,
+    "hierarchy_improvement_score": 7.0,
     "export_requested": false,
     "runtime_decision": "failed_edit_quality"
   },
@@ -185,9 +206,9 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
     "notes": "Phase 4.6 reclassification: predictive base remains proof-level. Tonal/color changes are visible numerically, but the main user-visible gain still reads as framing pressure relief rather than meaningful non-crop subject separation."
   },
   "score_delta": {
-    "visible_difference": "+1.6",
-    "hierarchy_improvement": "-0.1",
-    "color_quality": "-0.9",
+    "visible_difference": "+1.9",
+    "hierarchy_improvement": "+0.5",
+    "color_quality": "-1.9",
     "naturalness": "+0.0",
     "artifact_free": "+1.0",
     "decision_correct": "no"
@@ -196,10 +217,10 @@ Reason: Tonal/color changes are numerically visible but do not materially improv
 ```
 
 ## Preview Files
-- base_preview: `docs/evaluations/runs/IMG_1279/base_preview.jpg`
-- predictive_preview: `docs/evaluations/runs/IMG_1279/predictive_preview.jpg`
-- before_after: `docs/evaluations/runs/IMG_1279/before_after.jpg`
-- profile: `docs/evaluations/runs/IMG_1279/predictive_profile.pp3`
+- base_preview: `docs/evaluations/runs_phase5/IMG_1279/base_preview.jpg`
+- predictive_preview: `docs/evaluations/runs_phase5/IMG_1279/predictive_preview.jpg`
+- before_after: `docs/evaluations/runs_phase5/IMG_1279/before_after.jpg`
+- profile: `docs/evaluations/runs_phase5/IMG_1279/predictive_profile.pp3`
 
 ## Visual Inspection Checklist
 - Subject readability improved

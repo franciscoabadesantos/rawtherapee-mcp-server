@@ -76,6 +76,33 @@ def _get_control_entry(section: str, key: str) -> dict[str, Any] | None:
     return entry if isinstance(entry, dict) else None
 
 
+def get_approved_curve_registry() -> dict[str, dict[str, Any]]:
+    """Return approved autonomous curve presets keyed by curve id."""
+    manifest = load_manifest()
+    registry = manifest.get("approved_curves", {})
+    if not isinstance(registry, dict):
+        return {}
+    return {key: value for key, value in registry.items() if isinstance(key, str) and isinstance(value, dict)}
+
+
+def get_approved_curve(curve_id: str) -> dict[str, Any] | None:
+    """Return one approved curve descriptor by id."""
+    return get_approved_curve_registry().get(curve_id)
+
+
+def find_approved_curve(section: str, key: str, value: object) -> dict[str, Any] | None:
+    """Resolve approved-curve metadata for one exact PP3 section/key/value triple."""
+    serialized_value = _serialize_pp3_like(value)
+    for curve in get_approved_curve_registry().values():
+        if (
+            str(curve.get("pp3_section", "")) == section
+            and str(curve.get("pp3_key", "")) == key
+            and str(curve.get("curve_string", "")) == serialized_value
+        ):
+            return curve
+    return None
+
+
 def _coerce_numeric(value: object) -> float | None:
     if isinstance(value, bool):
         return None

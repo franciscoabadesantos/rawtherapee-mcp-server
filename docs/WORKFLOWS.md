@@ -2,6 +2,23 @@
 
 Concrete end-to-end workflows showing how the tools work together. These examples assume you're using an MCP client with inline image support (e.g., Claude Desktop).
 
+## Default Autonomous Editing
+
+The normal autonomous route is now:
+
+```
+preview_raw
+→ infer_photo_intent
+→ create_editing_vision
+→ create_editorial_brief
+→ get_compact_manifest_summary
+→ auto_edit_manifest_select_prepare
+→ verify_predictive_edit
+→ process_raw only when verify returns decision="export" and export_gate_passed=true
+```
+
+Generated or adjusted profiles should not go straight to `process_raw` without a verifier-issued `verification_id`, unless a human explicitly chooses `manual_override_unverified_export=true`.
+
 ## Basic RAW Processing
 
 The simplest workflow: analyze, create a profile, preview, process.
@@ -40,8 +57,11 @@ You: "The highlights are still too bright"
     parameters={"highlight_compression": 200})
 → preview_with_adjustments — LLM verifies the local adjustment
 
-You: "Perfect, export it"
-→ process_raw(file_path, profile_path)
+You: "Perfect, verify it for export"
+→ verify_predictive_edit(...)
+
+You: "Export it"
+→ process_raw(file_path, profile_path, verification_id="...")
 ```
 
 ## Batch Processing a Photo Session

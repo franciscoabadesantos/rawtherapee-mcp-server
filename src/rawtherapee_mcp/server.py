@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 from fastmcp import Context, FastMCP
 from fastmcp.server.lifespan import lifespan
@@ -143,6 +144,89 @@ RAW_EXTENSIONS = frozenset(
 def _get_templates_dir() -> Path:
     """Get the path to built-in PP3 templates."""
     return Path(str(files("rawtherapee_mcp.templates")))
+
+
+def _verification_marker_dir(config: RTConfig) -> Path:
+    marker_dir = config.preview_dir / "_verification_markers"
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    return marker_dir
+
+
+def _profile_signature(profile_path: Path) -> dict[str, Any]:
+    stat = profile_path.stat()
+    return {
+        "profile_path": str(profile_path.resolve()),
+        "profile_mtime_ns": stat.st_mtime_ns,
+        "profile_size": stat.st_size,
+    }
+
+
+def _profile_requires_verification(config: RTConfig, profile_path: Path) -> bool:
+    resolved = profile_path.resolve()
+    guarded_roots = [config.custom_templates_dir.resolve(), config.preview_dir.resolve()]
+    return any(resolved.is_relative_to(root) for root in guarded_roots)
+
+
+def _write_verification_marker(
+    config: RTConfig,
+    *,
+    raw_path: Path,
+    profile_path: Path,
+    decision: str,
+    export_gate_passed: bool,
+    decision_source: str,
+) -> dict[str, Any]:
+    verification_id = uuid4().hex
+    marker = {
+        "verification_id": verification_id,
+        "decision": decision,
+        "decision_source": decision_source,
+        "export_gate_passed": bool(export_gate_passed),
+        "verified_export_allowed": bool(export_gate_passed and decision == "export"),
+        "raw_path": str(raw_path.resolve()),
+        **_profile_signature(profile_path),
+        "created_at_epoch_ms": int(time.time() * 1000),
+    }
+    marker_path = _verification_marker_dir(config) / f"{verification_id}.json"
+    marker_path.write_text(json.dumps(marker, indent=2), encoding="utf-8")
+    return marker
+
+
+def _load_verification_marker(config: RTConfig, verification_id: str) -> dict[str, Any] | None:
+    marker_path = _verification_marker_dir(config) / f"{verification_id}.json"
+    if not marker_path.is_file():
+        return None
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _validate_export_verification(
+    config: RTConfig,
+    *,
+    raw_path: Path,
+    profile_path: Path,
+    verification_id: str | None,
+) -> tuple[bool, dict[str, Any] | None, str | None]:
+    if not verification_id:
+        return False, None, "Missing verification_id for an autonomous/generated profile."
+    marker = _load_verification_marker(config, verification_id)
+    if marker is None:
+        return False, None, f"Verification marker not found: {verification_id}"
+    if not marker.get("verified_export_allowed"):
+        return False, marker, "Verification marker exists but does not authorize export."
+    if str(marker.get("raw_path")) != str(raw_path.resolve()):
+        return False, marker, "Verification marker raw_path does not match the requested RAW file."
+    current_signature = _profile_signature(profile_path)
+    if str(marker.get("profile_path")) != current_signature["profile_path"]:
+        return False, marker, "Verification marker profile_path does not match the requested profile."
+    if marker.get("profile_mtime_ns") != current_signature["profile_mtime_ns"]:
+        return False, marker, "Profile has changed since verification; rerun verify_predictive_edit."
+    if marker.get("profile_size") != current_signature["profile_size"]:
+        return False, marker, "Profile content changed since verification; rerun verify_predictive_edit."
+    return True, marker, None
 
 
 @lifespan
@@ -1071,10 +1155,11 @@ async def generate_editorial_candidates(
     style_direction: str | None = None,
     editing_vision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Generate 3 distinct, tasteful editorial PP3 candidates for preview/critique.
+    """Legacy/debug/manual candidate generator; not for autonomous final edits.
 
     Creates clean_editorial, warm_travel, and cinematic_soft profiles with
-    stronger visible differences. This tool does not render or export.
+    stronger visible differences. Do not use for autonomous final edits.
+    Use auto_edit_manifest_select_prepare + verify_predictive_edit instead.
     Params: file_path, base_name, style_family, device_preset
     """
     config = get_config(ctx)
@@ -1150,9 +1235,13 @@ async def generate_editorial_candidates(
         "editing_vision": editing_vision,
         "candidates": candidates,
         "workflow_reminder": (
-            "Preview every candidate before exporting. Use critique_gate after visual inspection. "
-            "Do not export weak candidates."
+            "Legacy/debug/manual-only path. Preview every candidate, then use "
+            "auto_edit_manifest_select_prepare + verify_predictive_edit for autonomous final decisions."
         ),
+        "legacy_status": "legacy_debug_manual_only",
+        "verification_required_before_export": True,
+        "recommended_next_tool": "verify_predictive_edit",
+        "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
     }
 
 
@@ -1244,14 +1333,17 @@ async def generate_vision_candidates(
         "editing_vision": editing_vision,
         "legacy_status": "deprecated for autonomous default use",
         "deprecated_reason": (
-            "Use auto_edit_predictive as the default autonomous path; "
-            "generate_vision_candidates remains for legacy comparison/debug."
+            "Use auto_edit_manifest_select_prepare + verify_predictive_edit as the default autonomous path; "
+            "generate_vision_candidates remains for legacy comparison/debug/manual work."
         ),
         "candidates": candidates,
         "workflow_reminder": (
-            "Preview all three candidates, critique them against the editing vision, "
-            "and export only when the chosen candidate clearly fits the vision."
+            "Legacy/debug/manual-only path. Do not export directly from these candidates. "
+            "Use auto_edit_manifest_select_prepare + verify_predictive_edit for autonomous final edits."
         ),
+        "verification_required_before_export": True,
+        "recommended_next_tool": "verify_predictive_edit",
+        "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
     }
 
 
@@ -1264,10 +1356,11 @@ async def legacy_generate_vision_candidates(
     intensity: str = "medium",
     device_preset: str | None = None,
 ) -> dict[str, Any]:
-    """Legacy visual-move candidate generator (deprecated default path).
+    """Legacy visual-move candidate generator (debug/manual-only path).
 
     This exposes the old autonomous candidate flow explicitly for debug and
-    A/B comparison. Default autonomous editing should use auto_edit_predictive.
+    A/B comparison. Default autonomous editing should use
+    auto_edit_manifest_select_prepare + verify_predictive_edit.
     """
     result = await generate_vision_candidates(
         ctx,
@@ -1279,6 +1372,9 @@ async def legacy_generate_vision_candidates(
     )
     if "error" not in result:
         result["legacy_tool"] = True
+        result["verification_required_before_export"] = True
+        result["recommended_next_tool"] = "verify_predictive_edit"
+        result["recommended_prepare_tool"] = "auto_edit_manifest_select_prepare"
     return result
 
 
@@ -2037,6 +2133,17 @@ async def verify_predictive_edit(
         ),
         "export_path": export_path,
     }
+    verification_marker = _write_verification_marker(
+        config,
+        raw_path=source_raw,
+        profile_path=profile,
+        decision=decision,
+        export_gate_passed=bool(normalized_scores.get("export_gate_passed")),
+        decision_source="verify_predictive_edit",
+    )
+    output["verification_id"] = verification_marker["verification_id"]
+    output["verification_marker"] = verification_marker
+    output["verified_export_allowed"] = verification_marker["verified_export_allowed"]
     return await _tool_result_with_preview_images(
         output,
         max_width=preview_width,
@@ -2254,14 +2361,18 @@ async def process_raw(
     bit_depth: int = 16,
     include_preview: bool = True,
     preview_max_width: int = 600,
+    verification_id: str | None = None,
+    manual_override_unverified_export: bool = False,
 ) -> dict[str, Any] | ToolResult:
     """Process a RAW file with a PP3 processing profile.
 
     Use this to convert a RAW file to JPEG, TIFF, or PNG using a PP3 profile.
     The profile controls all processing parameters (exposure, white balance,
-    sharpening, etc.). Returns an inline thumbnail when include_preview is True.
+    sharpening, etc.). Autonomous/generated profiles must be verified first via
+    auto_edit_manifest_select_prepare + verify_predictive_edit, unless an explicit
+    manual override is supplied. Returns an inline thumbnail when include_preview is True.
     Params: file_path, profile_path, output_format, output_path, jpeg_quality, bit_depth,
-    include_preview, preview_max_width
+    include_preview, preview_max_width, verification_id, manual_override_unverified_export
     """
     config = get_config(ctx)
     rt_check = _require_rt(config)
@@ -2275,6 +2386,27 @@ async def process_raw(
         return {"error": f"RAW file not found: {file_path}"}
     if not pp3_path.is_file():
         return {"error": f"Profile not found: {profile_path}"}
+
+    if _profile_requires_verification(config, pp3_path):
+        verified, marker, verification_error = _validate_export_verification(
+            config,
+            raw_path=raw_path,
+            profile_path=pp3_path,
+            verification_id=verification_id,
+        )
+        if not verified and not manual_override_unverified_export:
+            return {
+                "error": "verification_required_before_export",
+                "reason": verification_error,
+                "profile_path": str(pp3_path),
+                "raw_path": str(raw_path),
+                "verification_required_before_export": True,
+                "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
+                "recommended_verify_tool": "verify_predictive_edit",
+                "manual_override_parameter": "manual_override_unverified_export",
+                "manual_override_required": True,
+                "verification_marker": marker,
+            }
 
     # Check for Crop+Resize conflict (RT 5.12 bug) — text-based to avoid
     # parser crash on Locallab profiles
@@ -2306,6 +2438,13 @@ async def process_raw(
 
     if crop_resize_warning:
         result["warning"] = crop_resize_warning
+    if manual_override_unverified_export and _profile_requires_verification(config, pp3_path):
+        result["manual_override_unverified_export"] = True
+        result["warning"] = (
+            f"{result.get('warning', '')} Manual override bypassed verification gate for this export."
+        ).strip()
+    elif verification_id:
+        result["verification_id"] = verification_id
 
     if include_preview:
         return await _maybe_attach_thumbnail(result, "output_path", preview_max_width)
@@ -2527,6 +2666,8 @@ async def adjust_profile(
 
     Use this to tweak individual settings without recreating the entire profile.
     Only the specified parameters are changed; all other settings are preserved.
+    Manual/debug tool only for autonomous workflows. Do not use this as the
+    final autonomous edit path without verify_predictive_edit.
 
     Accepts both friendly parameter names (e.g. {"crop": {"width": 3108}}) and
     raw PP3 section/key pairs (e.g. {"Crop": {"W": "3108", "H": "6732"}}).
@@ -2555,6 +2696,10 @@ async def adjust_profile(
         "profile_path": str(output_path),
         "adjustments_applied": adjustments,
         "summary": profile.to_dict(),
+        "legacy_status": "manual_debug_only",
+        "verification_required_before_export": True,
+        "recommended_next_tool": "verify_predictive_edit",
+        "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
     }
 
 

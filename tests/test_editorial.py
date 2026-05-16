@@ -51,6 +51,11 @@ class TestBuildEditorialBrief:
             "llm_instructions",
         }
         assert expected_keys.issubset(set(brief.keys()))
+        assert "autonomous_default_path" in brief
+        assert "legacy_debug_only_tools" in brief
+        assert "auto_edit_manifest_select_prepare" in brief["recommended_workflow"]
+        assert "verify_predictive_edit" in brief["recommended_workflow"]
+        assert "adjust_profile" in brief["legacy_debug_only_tools"]
 
     def test_contains_strict_instructions(self):
         brief = build_editorial_brief(

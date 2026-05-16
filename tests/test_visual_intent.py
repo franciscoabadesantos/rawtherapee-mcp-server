@@ -42,8 +42,9 @@ class TestBuildEditingVisionContract:
         }
         assert expected_keys.issubset(set(contract.keys()))
         assert "emotional_goal" in contract["editing_vision_schema"]
-        assert "auto_edit_predictive" in contract["next_recommended_tools"]
-        assert "legacy_generate_vision_candidates" in contract["next_recommended_tools"]
+        assert "get_compact_manifest_summary" in contract["next_recommended_tools"]
+        assert "auto_edit_manifest_select_prepare" in contract["next_recommended_tools"]
+        assert "verify_predictive_edit" in contract["next_recommended_tools"]
         assert "create_composition_plan" in contract["next_recommended_tools"]
         assert "Can crop or framing improve hierarchy more than global tone/color?" in contract[
             "required_visual_questions"

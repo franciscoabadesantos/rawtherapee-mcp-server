@@ -184,8 +184,9 @@ class TestEditorialWorkflowTools:
         assert "error" not in result
         assert result["file_path"] == str(raw_file)
         assert "editing_vision_schema" in result
-        assert "auto_edit_predictive" in result["next_recommended_tools"]
-        assert "legacy_generate_vision_candidates" in result["next_recommended_tools"]
+        assert "get_compact_manifest_summary" in result["next_recommended_tools"]
+        assert "auto_edit_manifest_select_prepare" in result["next_recommended_tools"]
+        assert "verify_predictive_edit" in result["next_recommended_tools"]
 
     async def test_create_composition_plan_returns_contract(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
@@ -219,6 +220,8 @@ class TestEditorialWorkflowTools:
         names = {tool.name for tool in tools}
         assert "visual_moves_to_parameters" in names
         assert "auto_edit_predictive" in names
+        assert "auto_edit_manifest_select_prepare" in names
+        assert "verify_predictive_edit" in names
         assert "legacy_generate_vision_candidates" in names
         assert "create_composition_plan" in names
         assert "generate_crop_candidates" in names
@@ -248,6 +251,9 @@ class TestEditorialWorkflowTools:
             result = await generate_editorial_candidates(mock_ctx, str(raw_file), "trip_frame")
         assert "error" not in result
         assert len(result["candidates"]) == 3
+        assert result["legacy_status"] == "legacy_debug_manual_only"
+        assert result["verification_required_before_export"] is True
+        assert result["recommended_next_tool"] == "verify_predictive_edit"
         for candidate in result["candidates"]:
             assert "safety_sanitizations_applied" in candidate
 
@@ -314,6 +320,8 @@ class TestEditorialWorkflowTools:
         )
         assert "error" not in result
         assert result["legacy_status"] == "deprecated for autonomous default use"
+        assert result["verification_required_before_export"] is True
+        assert result["recommended_next_tool"] == "verify_predictive_edit"
         assert len(result["candidates"]) == 3
         assert [candidate["candidate_name"] for candidate in result["candidates"]] == [
             "faithful_refinement",
@@ -363,6 +371,8 @@ class TestEditorialWorkflowTools:
         )
         assert "error" not in result
         assert result["legacy_tool"] is True
+        assert result["verification_required_before_export"] is True
+        assert result["recommended_next_tool"] == "verify_predictive_edit"
 
     async def test_auto_edit_predictive_uses_manifest_allowed_controls(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
@@ -1463,6 +1473,92 @@ class TestProcessRaw:
             result = await process_raw(mock_ctx, str(raw_file), str(pp3_file), include_preview=False)
             assert result["success"] is True
 
+    async def test_blocks_unverified_generated_profile_export(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+        pp3_file = mock_ctx.lifespan_context["config"].custom_templates_dir / "generated.pp3"
+        pp3_file.write_text("[Version]\nAppVersion=5.11\n")
+
+        result = await process_raw(mock_ctx, str(raw_file), str(pp3_file), include_preview=False)
+        assert result["error"] == "verification_required_before_export"
+        assert result["recommended_prepare_tool"] == "auto_edit_manifest_select_prepare"
+        assert result["recommended_verify_tool"] == "verify_predictive_edit"
+
+    async def test_verified_export_succeeds_for_generated_profile(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+        profile_path = mock_ctx.lifespan_context["config"].custom_templates_dir / "generated.pp3"
+        profile_path.write_text("[Version]\nAppVersion=5.11\n")
+        base_preview = tmp_path / "base.jpg"
+        edited_preview = tmp_path / "edited.jpg"
+        PILImage.new("RGB", (800, 600), "gray").save(base_preview, "JPEG")
+        PILImage.new("RGB", (800, 600), "blue").save(edited_preview, "JPEG")
+
+        verify_result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=str(profile_path),
+            base_preview_path=str(base_preview),
+            edited_preview_path=str(edited_preview),
+            verification_observations={
+                "subject_change_description": "Subject reads more clearly.",
+                "background_change_description": "Background is slightly calmer.",
+                "midtone_change_description": "Midtones open without going flat.",
+                "highlight_shadow_description": "Highlights stay believable and shadows stay controlled.",
+                "color_change_description": "Color gains presence without looking fake.",
+                "artifact_description": "No obvious artifacts are visible.",
+                "crop_dependency_description": "The improvement is mostly tonal and color based rather than crop driven.",
+                "scores": {
+                    "global_pixel_difference": 7.4,
+                    "subject_separation_improvement": 7.2,
+                    "non_crop_tonal_improvement": 7.3,
+                    "color_intent_improvement": 7.1,
+                    "highlight_shadow_quality": 7.0,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "artifact_check": "pass",
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                },
+            },
+            export=False,
+        )
+        verify_payload = verify_result.structured_content if isinstance(verify_result, ToolResult) else verify_result
+        assert verify_payload["decision_source"] == "verify_predictive_edit"
+        assert verify_payload["verified_export_allowed"] is True
+        assert verify_payload["verification_id"]
+
+        mock_result = {"success": True, "output_path": "/output/photo.jpg", "processing_time": 1.5, "file_size": 1000}
+        with patch("rawtherapee_mcp.server.run_rt_cli", return_value=mock_result):
+            process_result = await process_raw(
+                mock_ctx,
+                str(raw_file),
+                str(profile_path),
+                include_preview=False,
+                verification_id=verify_payload["verification_id"],
+            )
+        assert process_result["success"] is True
+        assert process_result["verification_id"] == verify_payload["verification_id"]
+
+    async def test_manual_override_allows_unverified_generated_profile_export(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+        pp3_file = mock_ctx.lifespan_context["config"].custom_templates_dir / "generated.pp3"
+        pp3_file.write_text("[Version]\nAppVersion=5.11\n")
+
+        mock_result = {"success": True, "output_path": "/output/photo.jpg", "processing_time": 1.5, "file_size": 1000}
+        with patch("rawtherapee_mcp.server.run_rt_cli", return_value=mock_result):
+            result = await process_raw(
+                mock_ctx,
+                str(raw_file),
+                str(pp3_file),
+                include_preview=False,
+                manual_override_unverified_export=True,
+            )
+        assert result["success"] is True
+        assert result["manual_override_unverified_export"] is True
+
 
 class TestPreviewRaw:
     """Tests for preview_raw tool."""
@@ -1594,6 +1690,8 @@ class TestAdjustProfile:
         )
         assert "error" not in result
         assert result["adjustments_applied"]["exposure"]["compensation"] == 1.5
+        assert result["verification_required_before_export"] is True
+        assert result["recommended_next_tool"] == "verify_predictive_edit"
 
         # Verify the file was actually written
         from rawtherapee_mcp.pp3_parser import PP3Profile

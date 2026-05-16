@@ -398,7 +398,7 @@ After installation and client configuration, try this workflow:
 
 ## Opinionated Editorial Workflow
 
-These tools do not replace low-level tools like `generate_pp3_profile`, `adjust_profile`, `preview_raw`, or `process_raw`. They add a stricter Lightroom/darktable-lite workflow contract so the LLM plans, creates distinct candidates, critiques, refines, and rejects weak edits when needed.
+These tools now define the default autonomous editing route. Low-level tools like `adjust_profile` and direct `process_raw` remain available for manual/debug work, but they are no longer the recommended autonomous final-edit path.
 
 - The server still relies on the MCP client/LLM to inspect inline previews visually.
 - The tools provide scoring structure and discipline; they do not claim to see the image by themselves.
@@ -411,12 +411,10 @@ Recommended sequence:
 2. `infer_photo_intent`
 3. `create_editing_vision`
 4. `create_editorial_brief`
-5. `preview_raw` or `preview_before_after`
-6. `generate_vision_candidates` or `generate_editorial_candidates`
-7. `critique_gate`
-8. `adjust_profile` (if critique says refine)
-9. Preview again
-10. `process_raw` only if the candidate clears threshold
+5. `get_compact_manifest_summary`
+6. `auto_edit_manifest_select_prepare`
+7. `verify_predictive_edit`
+8. `process_raw` only if `verify_predictive_edit` returns `decision=export` and `export_gate_passed=true`
 
 ## Visual Intention Editing Workflow
 
@@ -433,11 +431,10 @@ Recommended vision-first sequence:
 2. `infer_photo_intent`
 3. `create_editing_vision`
 4. `create_editorial_brief` with `inferred_intent` and `editing_vision`
-5. `generate_vision_candidates`
-6. Preview all three candidates
-7. `critique_gate` with `editing_vision`
-8. Refine the best candidate using the same visual moves
-9. Export, proof, or reject honestly
+5. `get_compact_manifest_summary`
+6. `auto_edit_manifest_select_prepare`
+7. `verify_predictive_edit`
+8. Export only through the verification gate, or return proof/reject honestly
 
 Visual move examples:
 
@@ -456,10 +453,10 @@ Safety notes:
 Example prompts:
 
 Example 1: Single photo autonomous edit
-"Use RawTherapee MCP. Create an editorial brief for this RAW, generate editorial candidates, preview each one, use critique_gate after each preview, refine the best candidate, and export only if it clears the post-worthy threshold. If it cannot be made post-worthy with RawTherapee-only edits, export a proof only and say why."
+"Use RawTherapee MCP. Create an editorial brief for this RAW, inspect the preview, use get_compact_manifest_summary, run auto_edit_manifest_select_prepare, then run verify_predictive_edit. Export only if verify returns decision=export with export_gate_passed=true. If RawTherapee-only edits cannot make it strong enough, return proof_only and say why."
 
 Example 2: Travel portrait
-"Edit this beach portrait with a warm cinematic coastal mood. Use create_editorial_brief first. Generate clean_editorial, warm_travel, and cinematic_soft candidates. Preview and critique each. Do not export any version where the face is muddy or the skin is orange."
+"Edit this beach portrait with a warm cinematic coastal mood. Use create_editorial_brief first, then use get_compact_manifest_summary, auto_edit_manifest_select_prepare, and verify_predictive_edit. Do not export any version where the face is muddy or the skin is orange."
 
 Example 3: Folder curation
 "Scan this folder of RAWs. Do not edit everything. Classify images as reject, proof_only, edit_candidate, or strong_keeper. Only generate candidate edits for strong keepers."
@@ -497,10 +494,10 @@ Recommended intent-aware sequence:
 2. `infer_photo_intent`
 3. `create_editing_vision`
 4. `create_editorial_brief` with `inferred_intent`
-5. Preview candidates
-6. `generate_vision_candidates` or `generate_editorial_candidates`
-7. `critique_gate` with `inferred_intent` / `critique_standard` / `editing_vision`
-7. refine/export/proof/reject
+5. `get_compact_manifest_summary`
+6. `auto_edit_manifest_select_prepare`
+7. `verify_predictive_edit`
+8. export/proof/reject from the verifier result
 
 ## Updating
 
@@ -583,11 +580,11 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | Tool | Description |
 |------|-------------|
 | `infer_photo_intent` | Build a structured intent-inference contract before editing (LLM fills after preview inspection) |
-| `create_editing_vision` | Build a structured visual-intention contract before candidate generation |
+| `create_editing_vision` | Build a structured visual-intention contract before manifest-select planning |
 | `list_visual_editing_moves` | List the compact palette of safe, high-level artistic editing moves |
 | `create_editorial_brief` | Build a strict editorial brief with critique/reject/export rules |
-| `generate_editorial_candidates` | Generate 3 distinct PP3 candidates (clean_editorial, warm_travel, cinematic_soft) |
-| `generate_vision_candidates` | Generate 3 safe candidates from an editing vision instead of fixed presets |
+| `generate_editorial_candidates` | Legacy/debug/manual-only candidate generator; not for autonomous final edits |
+| `generate_vision_candidates` | Legacy/debug/manual-only candidate generator from editing vision |
 | `critique_gate` | Return the scoring rubric and strict pass/fail contract after preview inspection |
 | `create_curation_plan` | Plan batch curation into reject/proof_only/edit_candidate/strong_keeper before editing |
 
@@ -607,7 +604,7 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 |------|-------------|
 | `generate_pp3_profile` | Create a PP3 profile from base template + parameters + device preset |
 | `read_profile` | Display PP3 profile contents in human-readable format |
-| `adjust_profile` | Modify specific parameters in an existing profile |
+| `adjust_profile` | Manual/debug profile tweaking; not a normal autonomous final-edit path |
 | `compare_profiles` | Diff two profiles with optional visual A/B comparison |
 | `save_template` | Save a profile as a reusable custom template |
 | `create_template_from_description` | Create a template stub from natural language description |
@@ -630,7 +627,7 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 
 | Tool | Description |
 |------|-------------|
-| `process_raw` | Process a RAW file to JPEG/TIFF/PNG with inline thumbnail |
+| `process_raw` | Process a RAW file to JPEG/TIFF/PNG; generated/edit profiles require verification or explicit manual override |
 | `apply_template` | Apply a template to process a RAW file with optional device preset |
 | `batch_process` | Process multiple RAW files with the same profile |
 | `export_multi_device` | Export one RAW optimized for multiple devices in one call |

@@ -29,12 +29,10 @@ SUPPORTED_EDITORIAL_STYLES = (
 _DEFAULT_RECOMMENDED_WORKFLOW = [
     "create_editing_vision",
     "create_editorial_brief",
-    "auto_edit_predictive (default) or legacy_generate_vision_candidates (debug)",
-    "preview_raw or preview_before_after",
-    "critique_gate",
-    "adjust_profile or refine using visual moves (only when critique says refine)",
-    "preview again",
-    "process_raw (only if critique threshold is passed)",
+    "get_compact_manifest_summary",
+    "auto_edit_manifest_select_prepare",
+    "verify_predictive_edit",
+    "process_raw (only if verify_predictive_edit returns decision=export and export_gate_passed=true)",
 ]
 
 _STYLE_PRIORITIES: dict[str, list[str]] = {
@@ -654,13 +652,13 @@ def build_editorial_brief(
             *_DEFAULT_RECOMMENDED_WORKFLOW,
         ],
         "required_preview_loop_steps": [
-            "Generate at least 3 distinct candidates before selecting a direction.",
-            "Preview each candidate and compare against original at thumbnail size.",
-            "Run critique_gate after every preview and follow its verdict strictly.",
-        "Refine the biggest flaw first, then re-preview before any export decision.",
-        "If inferred intent changes after preview, revise the brief and critique standard.",
-        "If hierarchy is weak and crop/framing may help more than tone/color, plan crop before giving up.",
-    ],
+            "Inspect the image preview before planning controls.",
+            "Use get_compact_manifest_summary to choose only exposed safe controls.",
+            "Run auto_edit_manifest_select_prepare first; do not treat prepare output as a final decision.",
+            "Run verify_predictive_edit on the rendered previews before any export attempt.",
+            "If inferred intent changes after preview, revise the brief before re-running prepare.",
+            "If hierarchy is weak and crop/framing may help more than tone/color, plan crop before giving up.",
+        ],
         "visual_critique_checklist": visual_checklist,
         "rejection_criteria": rejection_criteria,
         "proof_only_criteria": [
@@ -691,6 +689,18 @@ def build_editorial_brief(
             "Complex local masking is limited compared to Lightroom/darktable advanced masking.",
         ],
         "llm_instructions": llm_instructions,
+        "autonomous_default_path": [
+            "get_compact_manifest_summary",
+            "auto_edit_manifest_select_prepare",
+            "verify_predictive_edit",
+            "process_raw",
+        ],
+        "legacy_debug_only_tools": [
+            "generate_editorial_candidates",
+            "generate_vision_candidates",
+            "legacy_generate_vision_candidates",
+            "adjust_profile",
+        ],
     }
 
     if metadata:
@@ -1163,12 +1173,13 @@ def build_curation_plan(
         },
         "suggested_batch_prompt": (
             "Be strict: classify each RAW as reject/proof_only/edit_candidate/strong_keeper. "
-            "Only run auto_edit_predictive (or legacy_generate_vision_candidates for debug) on strong_keeper files."
+            "Only run get_compact_manifest_summary + auto_edit_manifest_select_prepare + verify_predictive_edit "
+            "on strong_keeper files. Legacy candidate tools are debug/manual only."
         ),
         "export_policy": [
             "Do not export finals for reject files.",
             "Proof-only exports are allowed for documentation/reference.",
-            "Final exports require critique_gate threshold pass.",
+            "Final exports require verify_predictive_edit with decision=export and export_gate_passed=true.",
         ],
         "reminder": "Weak photos should not be forced into post-worthy exports.",
     }

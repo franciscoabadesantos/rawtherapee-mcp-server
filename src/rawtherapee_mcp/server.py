@@ -234,6 +234,43 @@ def _load_profile_provenance(profile_path: Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _write_profile_provenance_payload(profile_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    provenance_path = _profile_provenance_path(profile_path)
+    provenance_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return payload
+
+
+def _copy_template_provenance(
+    *,
+    source_profile_path: Path,
+    destination_profile_path: Path,
+    template_name: str,
+) -> dict[str, Any] | None:
+    source_payload = _load_profile_provenance(source_profile_path)
+    if not isinstance(source_payload, dict):
+        return None
+    provenance = source_payload.get("profile_provenance")
+    if not isinstance(provenance, dict):
+        return None
+    source_signature = _profile_signature(source_profile_path)
+    root_original_path = str(provenance.get("original_profile_path") or source_signature["profile_path"])
+    root_original_mtime_ns = provenance.get("original_profile_mtime_ns", source_signature["profile_mtime_ns"])
+    root_original_size = provenance.get("original_profile_size", source_signature["profile_size"])
+    copied_payload = {
+        "profile_provenance": {
+            **provenance,
+            "profile_path": str(destination_profile_path.resolve()),
+            "original_profile_path": root_original_path,
+            "original_profile_mtime_ns": root_original_mtime_ns,
+            "original_profile_size": root_original_size,
+            "saved_as_template": True,
+            "template_name": template_name,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    }
+    return _write_profile_provenance_payload(destination_profile_path, copied_payload)
+
+
 def _validate_profile_provenance(*, raw_path: Path, profile_path: Path) -> tuple[bool, dict[str, Any] | None, str | None]:
     payload = _load_profile_provenance(profile_path)
     if not isinstance(payload, dict):
@@ -294,11 +331,12 @@ def _matching_template_names(
     return [name for name in template_names if token in name.lower()]
 
 
-def _verification_required_workflow() -> list[str]:
+def _verification_required_workflow(*, include_apply_template: bool = False) -> list[str]:
+    final_step = "apply_template or process_raw with verification_id" if include_apply_template else "process_raw with verification_id"
     return [
         "auto_edit_manifest_select_prepare",
         "verify_predictive_edit",
-        "process_raw with verification_id",
+        final_step,
     ]
 
 
@@ -338,6 +376,22 @@ def _load_verification_marker(config: RTConfig, verification_id: str) -> dict[st
     return payload if isinstance(payload, dict) else None
 
 
+def _provenance_links_to_marker(profile_path: Path, marker: dict[str, Any]) -> tuple[bool, dict[str, Any] | None, str | None]:
+    payload = _load_profile_provenance(profile_path)
+    if not isinstance(payload, dict):
+        return False, None, "Missing provenance sidecar."
+    provenance = payload.get("profile_provenance")
+    if not isinstance(provenance, dict):
+        return False, payload, "Malformed provenance sidecar."
+    if str(provenance.get("original_profile_path") or "") != str(marker.get("profile_path", "")):
+        return False, payload, "Provenance chain does not link back to the verified profile path."
+    if provenance.get("original_profile_mtime_ns") != marker.get("profile_mtime_ns"):
+        return False, payload, "Provenance chain original profile mtime does not match the verification marker."
+    if provenance.get("original_profile_size") != marker.get("profile_size"):
+        return False, payload, "Provenance chain original profile size does not match the verification marker."
+    return True, payload, None
+
+
 def _validate_export_verification(
     config: RTConfig,
     *,
@@ -355,12 +409,15 @@ def _validate_export_verification(
     if str(marker.get("raw_path")) != str(raw_path.resolve()):
         return False, marker, "Verification marker raw_path does not match the requested RAW file."
     current_signature = _profile_signature(profile_path)
-    if str(marker.get("profile_path")) != current_signature["profile_path"]:
-        return False, marker, "Verification marker profile_path does not match the requested profile."
-    if marker.get("profile_mtime_ns") != current_signature["profile_mtime_ns"]:
-        return False, marker, "Profile has changed since verification; rerun verify_predictive_edit."
-    if marker.get("profile_size") != current_signature["profile_size"]:
-        return False, marker, "Profile content changed since verification; rerun verify_predictive_edit."
+    if str(marker.get("profile_path")) == current_signature["profile_path"]:
+        if marker.get("profile_mtime_ns") != current_signature["profile_mtime_ns"]:
+            return False, marker, "Profile has changed since verification; rerun verify_predictive_edit."
+        if marker.get("profile_size") != current_signature["profile_size"]:
+            return False, marker, "Profile content changed since verification; rerun verify_predictive_edit."
+        return True, marker, None
+    provenance_ok, _provenance_payload, provenance_error = _provenance_links_to_marker(profile_path, marker)
+    if not provenance_ok:
+        return False, marker, provenance_error or "Verification marker does not match the requested profile provenance."
     return True, marker, None
 
 
@@ -1671,7 +1728,6 @@ _NEGATIVE_ARTIFACT_TERMS = (
     "color cast",
     "green cast",
     "cyan cast",
-    "flat",
     "washed",
     "milky",
     "lifted blacks",
@@ -1719,6 +1775,20 @@ def _verify_required_scores(verification_observations: dict[str, Any]) -> list[s
         if field not in scores:
             missing.append(field)
     return missing
+
+
+def _validate_verification_score_schema(scores: dict[str, Any]) -> list[dict[str, Any]]:
+    invalid: list[dict[str, Any]] = []
+    perceived = scores.get("perceived_non_crop_improvement")
+    if not isinstance(perceived, str) or perceived.strip().lower() not in {"none", "weak", "moderate", "strong"}:
+        invalid.append(
+            {
+                "field": "perceived_non_crop_improvement",
+                "value": perceived,
+                "expected": "one of: none, weak, moderate, strong",
+            }
+        )
+    return invalid
 
 
 def _build_before_after_preview(
@@ -2318,6 +2388,12 @@ async def verify_predictive_edit(
     scores_raw = verification_observations.get("scores", {})
     if not isinstance(scores_raw, dict):
         scores_raw = {}
+    invalid_score_fields = _validate_verification_score_schema(scores_raw)
+    if invalid_score_fields:
+        return {
+            "error": "verification_scores_invalid",
+            "invalid_fields": invalid_score_fields,
+        }
     normalized_input_scores = _normalize_verification_observed_scores(
         scores_raw,
         crop_dependency="secondary",
@@ -2822,6 +2898,7 @@ async def apply_template(
     device_preset: str | None = None,
     include_preview: bool = True,
     preview_max_width: int = 600,
+    verification_id: str | None = None,
 ) -> dict[str, Any] | ToolResult:
     """Apply a built-in or custom PP3 template to a RAW file and process it.
 
@@ -2829,7 +2906,7 @@ async def apply_template(
     a device preset for crop/resize on top of the template. Returns an inline
     thumbnail when include_preview is True.
     Params: file_path, template_name, output_format, output_dir, device_preset,
-    include_preview, preview_max_width
+    include_preview, preview_max_width, verification_id
     """
     config = get_config(ctx)
     rt_check = _require_rt(config)
@@ -2848,6 +2925,24 @@ async def apply_template(
         template_path = templates_dir / f"{template_name}.pp3"
     if not template_path.is_file():
         return {"error": f"Template '{template_name}' not found"}
+    if _profile_requires_verification(config, template_path):
+        verified, marker, verification_error = _validate_export_verification(
+            config,
+            raw_path=raw_path,
+            profile_path=template_path,
+            verification_id=verification_id,
+        )
+        if not verified:
+            return {
+                "error": "verification_required_before_export",
+                "reason": "Template/profile export requires verify_predictive_edit approval.",
+                "details": verification_error,
+                "template_name": template_name,
+                "template_path": str(template_path),
+                "verification_required_before_export": True,
+                "verification_marker": marker,
+                "required_workflow": _verification_required_workflow(include_apply_template=True),
+            }
 
     # Build a SINGLE combined PP3 (RT 5.12 can crash merging multiple PP3s)
     combined = PP3Profile()
@@ -2898,6 +2993,12 @@ async def apply_template(
         output_format=output_format,
         jpeg_quality=config.default_jpeg_quality,
     )
+    if verification_id:
+        result["verification_id"] = verification_id
+    template_provenance = _load_profile_provenance(template_path)
+    if template_provenance is not None:
+        result["template_provenance_path"] = str(_profile_provenance_path(template_path))
+        result["template_provenance"] = template_provenance.get("profile_provenance", template_provenance)
 
     # Add diagnostic info for device preset results
     if device_preset:
@@ -3122,13 +3223,22 @@ async def save_template(
 
     dest = config.custom_templates_dir / f"{name}.pp3"
     shutil.copy2(str(pp3_path), str(dest))
+    copied_provenance = _copy_template_provenance(
+        source_profile_path=pp3_path,
+        destination_profile_path=dest,
+        template_name=name,
+    )
 
-    return {
+    result = {
         "template_name": name,
         "template_path": str(dest),
         "description": description,
         "source_path": str(pp3_path),
     }
+    if copied_provenance is not None:
+        result["profile_provenance_path"] = str(_profile_provenance_path(dest))
+        result["profile_provenance"] = copied_provenance.get("profile_provenance", {})
+    return result
 
 
 @mcp.tool()

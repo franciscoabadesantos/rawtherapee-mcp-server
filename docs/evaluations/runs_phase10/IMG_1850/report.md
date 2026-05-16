@@ -1,0 +1,544 @@
+# Predictive Editor Evaluation
+
+- raw_path: `/mnt/c/Users/santo/Pictures/IMG_1850.CR3`
+- source_type: `raw`
+- is_raw_regression: `True`
+- calibration_allowed: `True`
+- brief: `landscape cleanup with controlled sky highlights, reduced haze, and natural tonal depth`
+- intensity: `medium`
+- style: `landscape cleanup with controlled sky highlights, reduced haze, and natural tonal depth`
+
+## Diagnosis
+
+## Planner / Prepare Output
+```json
+{
+  "status": "verification_required",
+  "decision": "verification_required",
+  "decision_source": "auto_edit_manifest_select_prepare",
+  "prepare_mode": "manifest_select",
+  "raw_path": "/mnt/c/Users/santo/Pictures/IMG_1850.CR3",
+  "profile_path": "/home/franciscosantos/.rawtherapee-mcp/custom_templates/img_1850_manifest_select.pp3",
+  "base_preview_path": "/tmp/manifest_select_base_IMG_1850_1778883909581.jpg",
+  "edited_preview_path": "/tmp/manifest_select_IMG_1850_1778883909648.jpg",
+  "preview_path": "/tmp/manifest_select_IMG_1850_1778883909648.jpg",
+  "before_after_path": "/tmp/manifest_select_compare_IMG_1850_1778883910700.jpg",
+  "image_observation": {
+    "main_subject": "coastal hillside and shoreline sweeping around the bay",
+    "supporting_elements": [
+      "cloud bank over the ridge",
+      "green field patterning on the hillside",
+      "harbor water and boats",
+      "village roofs along the coast"
+    ],
+    "distractions": [
+      "gray atmospheric haze over the hill and cloud base",
+      "weak tonal separation between cloud shadow, ridge, and field texture",
+      "slightly chalky brightness in the upper frame"
+    ],
+    "tonal_state": "the scene is veiled and low-clarity; structure is present but softened by haze",
+    "color_state": "greens and water are believable but a little washed by the atmospheric veil",
+    "highlight_shadow_state": "the cloud bank is bright and broad; highlight protection matters more than shadow lift",
+    "composition_state": "the composition is already clean and panoramic, so the edit should not pretend framing is the answer"
+  },
+  "vision_interpretation": {
+    "user_goal": "clean up the landscape, keep cloud highlights under control, and increase natural tonal depth",
+    "desired_viewer_first_read": "coastline sweep first, then hillside patchwork and cloud structure",
+    "desired_mood": "clearer Atlantic daylight, still honest about the weather and haze",
+    "must_preserve": [
+      "natural cloud brightness",
+      "believable greens",
+      "soft coastal atmosphere"
+    ],
+    "must_avoid": [
+      "fake HDR",
+      "gray haze from over-compression",
+      "oversharpening",
+      "crop-only improvement"
+    ]
+  },
+  "control_selections": [
+    {
+      "control_id": "Luminance Curve.lhCurve",
+      "approved_value_id": "luminance_curve.landscape_depth_v1",
+      "reason": "Use the approved landscape tonal-depth preset as the safest available way to add hillside structure.",
+      "expected_effect": "better lower-midtone depth through fields and shoreline",
+      "risk": "haze transitions can feel too hard",
+      "risk_mitigation": "stay with the approved exact preset rather than inventing a stronger curve"
+    },
+    {
+      "control_id": "Exposure.HighlightCompr",
+      "value": 20,
+      "reason": "Compress the brightest cloud values slightly so the ridge and cloud mass can coexist more cleanly.",
+      "expected_effect": "better cloud control with less chalky glare",
+      "risk": "flat or gray highlights",
+      "risk_mitigation": "keep the setting moderate and avoid stacking too much local highlight processing"
+    },
+    {
+      "control_id": "Exposure.HighlightComprThreshold",
+      "value": 34,
+      "reason": "Start compression high enough to target the cloud bank rather than the whole frame.",
+      "expected_effect": "more selective highlight control",
+      "risk": "highlight transition artifacts",
+      "risk_mitigation": "use conservatively because evidence is still pending"
+    },
+    {
+      "control_id": "Exposure.Contrast",
+      "value": 6,
+      "reason": "Support the shoreline and field patterning with a mild contrast increase.",
+      "expected_effect": "slightly clearer scene hierarchy",
+      "risk": "more brittle haze transitions",
+      "risk_mitigation": "keep the number modest"
+    },
+    {
+      "control_id": "Vibrance.Enabled",
+      "value": true,
+      "reason": "Enable selective color support so the greens and water recover presence without becoming loud.",
+      "expected_effect": "cleaner color separation in vegetation and sea",
+      "risk": "tourist-postcard oversaturation",
+      "risk_mitigation": "lift pastels more than already saturated colors"
+    },
+    {
+      "control_id": "Vibrance.Pastels",
+      "value": 5,
+      "reason": "The haze has muted the quieter greens; a selective pastel lift can help them read.",
+      "expected_effect": "better low-saturation color presence",
+      "risk": "unnatural green lift",
+      "risk_mitigation": "keep the move restrained"
+    },
+    {
+      "control_id": "Vibrance.Saturated",
+      "value": 2,
+      "reason": "Keep already-bright colors from overshooting while still adding a little support.",
+      "expected_effect": "modest saturation reinforcement",
+      "risk": "clipped color if too strong",
+      "risk_mitigation": "stay very low"
+    },
+    {
+      "control_id": "Vibrance.AvoidColorShift",
+      "value": true,
+      "reason": "Protect the coastline and field hues from drifting while adding color.",
+      "expected_effect": "cleaner hue stability",
+      "risk": "less visible impact",
+      "risk_mitigation": "acceptable because realism matters more than force"
+    }
+  ],
+  "controls_considered_but_rejected": [
+    {
+      "control_id": "Retinex",
+      "reason": "A haze-specific global or local dehaze family would likely help this image, but it is not available in the current manifest and cannot be selected."
+    },
+    {
+      "control_id": "Local Contrast.Amount",
+      "reason": "Blocked by manifest and likely to turn the haze/cloud transitions brittle."
+    },
+    {
+      "control_id": "HSV Equalizer.HCurve",
+      "reason": "Blocked by manifest and too likely to fake the landscape color rather than solve the atmospheric veil."
+    }
+  ],
+  "non_goals": [
+    "do not create fake HDR",
+    "do not pretend crop solves the haze problem",
+    "do not harden the cloud edge unnaturally"
+  ],
+  "parameters": {
+    "luminance_curve": {
+      "enabled": true,
+      "contrast": 12,
+      "avoid_color_shift": true,
+      "lh_curve": "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;",
+      "hh_curve": "5;0;0;0.28;0.24;0.60;0.52;0.82;0.74;1;0.90;"
+    },
+    "exposure": {
+      "highlight_compression": 20,
+      "contrast": 6
+    },
+    "highlight_rolloff": {
+      "highlight_compression_threshold": 34
+    },
+    "vibrance": {
+      "enabled": true,
+      "pastels": 5,
+      "saturated": 2,
+      "avoidcolorshift": true
+    }
+  },
+  "validation": {
+    "allowed": true,
+    "blocked": [],
+    "warnings": []
+  },
+  "verification_packet": {
+    "subject": "coastal hillside and shoreline sweeping around the bay",
+    "questions": [
+      "Describe what changed around the main subject.",
+      "Describe whether the subject separates more clearly from the background.",
+      "Describe what changed in midtones.",
+      "Describe what changed in highlights/shadows.",
+      "Describe what changed in color.",
+      "Describe any artifacts or unnatural effects.",
+      "Is the visible improvement mostly crop/framing or tonal/color/detail?"
+    ],
+    "required_descriptions": [
+      "subject_change_description",
+      "midtone_change_description",
+      "highlight_shadow_description",
+      "color_change_description",
+      "artifact_description",
+      "crop_dependency_description"
+    ],
+    "score_fields_required": [
+      "subject_separation_improvement",
+      "non_crop_tonal_improvement",
+      "color_intent_improvement",
+      "highlight_shadow_quality",
+      "composition_improvement",
+      "crop_contribution",
+      "perceived_non_crop_improvement",
+      "artifact_check",
+      "naturalness_score",
+      "artifact_free_score"
+    ]
+  }
+}
+```
+
+## Parameters
+```json
+{
+  "luminance_curve": {
+    "enabled": true,
+    "contrast": 12,
+    "avoid_color_shift": true,
+    "lh_curve": "5;0;0;0.16;0.10;0.46;0.52;0.76;0.88;1;1;",
+    "hh_curve": "5;0;0;0.28;0.24;0.60;0.52;0.82;0.74;1;0.90;"
+  },
+  "exposure": {
+    "highlight_compression": 20,
+    "contrast": 6
+  },
+  "highlight_rolloff": {
+    "highlight_compression_threshold": 34
+  },
+  "vibrance": {
+    "enabled": true,
+    "pastels": 5,
+    "saturated": 2,
+    "avoidcolorshift": true
+  }
+}
+```
+
+## Planner Expected
+```json
+{}
+```
+
+## Expected Effects
+
+## Validation
+```json
+{
+  "allowed": true,
+  "blocked": [],
+  "warnings": []
+}
+```
+
+## Visual Verification Observations
+```json
+{
+  "subject_change_description": "The coastline sweep and field patterning read a little more clearly, but the haze still keeps the hill from separating strongly.",
+  "background_change_description": "Cloud and ridge relationships are slightly cleaner, though the broad atmospheric veil remains the main limiter.",
+  "midtone_change_description": "Midtones gain a modest amount of hillside structure and shoreline definition but not enough to feel like a materially stronger landscape edit.",
+  "highlight_shadow_description": "The cloud bank is a bit better controlled, but the upper frame still feels bright and veiled rather than decisively shaped.",
+  "color_change_description": "Greens and water gain some presence while staying natural, but the scene still looks weather-soft rather than crisply resolved.",
+  "artifact_description": "No obvious halos or fake-HDR transitions appear, but the image still carries a gray haze ceiling.",
+  "crop_dependency_description": "Any gain is tonal and color based; the weakness comes from limited haze-removal capability rather than framing.",
+  "scores": {
+    "global_pixel_difference": 5.9,
+    "subject_separation_improvement": 5.2,
+    "non_crop_tonal_improvement": 6.0,
+    "color_intent_improvement": 6.3,
+    "highlight_shadow_quality": 6.4,
+    "composition_improvement": 4.0,
+    "crop_contribution": 1.0,
+    "perceived_non_crop_improvement": "weak",
+    "artifact_check": "pass",
+    "naturalness_score": 8.4,
+    "artifact_free_score": 9.0,
+    "subject_hierarchy_score": 5.2,
+    "thumbnail_subject_read_score": 5.1,
+    "color_quality_score": 6.3
+  }
+}
+```
+
+## Visual Verification Scores
+```json
+{
+  "global_visible_difference_score": 0.0,
+  "global_pixel_difference": 5.9,
+  "subject_hierarchy_score": 5.2,
+  "thumbnail_subject_read_score": 5.1,
+  "color_quality_score": 6.3,
+  "naturalness_score": 8.4,
+  "artifact_free_score": 9.0,
+  "crop_dependency": "secondary",
+  "non_crop_tonal_improvement": 6.0,
+  "subject_separation_improvement": 5.2,
+  "color_intent_improvement": 6.3,
+  "highlight_shadow_quality": 6.4,
+  "composition_improvement": 4.0,
+  "crop_contribution": 1.0,
+  "perceived_non_crop_improvement": "weak",
+  "meaningful_non_crop_edit": false,
+  "non_crop_quality_pass_count": 0,
+  "non_crop_quality_pass_fields": [],
+  "crop_only_improvement": false,
+  "non_crop_edit_quality": "fail",
+  "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
+  "hierarchy_boost_applied": false,
+  "artifact_check": "pass",
+  "decision": "failed_edit_quality",
+  "export_gate_passed": false,
+  "gate_requirements": {
+    "meaningful_non_crop_requirements": {
+      "minimum_score": 7.0,
+      "minimum_pass_count": 2,
+      "fields": [
+        "subject_separation_improvement",
+        "non_crop_tonal_improvement",
+        "color_intent_improvement",
+        "highlight_shadow_quality"
+      ]
+    },
+    "subject_hierarchy_score_min": 7.0,
+    "thumbnail_subject_read_score_min": 7.0,
+    "artifact_free_score_min": 8.0,
+    "naturalness_score_min": 7.0,
+    "crop_dependency": "not primary",
+    "crop_contribution_max_for_export": 6.9,
+    "validation_allowed": true
+  },
+  "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
+  "visible_difference_score": 0.0,
+  "hierarchy_improvement_score": 5.2
+}
+```
+
+## Consistency Checks
+```json
+{
+  "warnings": [
+    {
+      "field": "artifact_free_score",
+      "reason": "Descriptions mention potential artifacts/unnatural traits but artifact_free_score is 9.0"
+    },
+    {
+      "field": "naturalness_score",
+      "reason": "Descriptions mention potential artifacts/unnatural traits but naturalness_score is 8.4"
+    },
+    {
+      "field": "artifact_check",
+      "reason": "Descriptions mention artifact-like terms but artifact_check is pass"
+    }
+  ],
+  "score_adjustments": []
+}
+```
+
+## Final Decision
+- Decision source: verify_predictive_edit
+- Decision: failed_edit_quality
+Non-crop edit quality: fail
+Reason: Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.
+
+## Export Gate
+```json
+{
+  "global_visible_difference_score": 0.0,
+  "global_pixel_difference": 5.9,
+  "subject_hierarchy_score": 5.2,
+  "thumbnail_subject_read_score": 5.1,
+  "color_quality_score": 6.3,
+  "naturalness_score": 8.4,
+  "artifact_free_score": 9.0,
+  "artifact_check": "pass",
+  "crop_dependency": "secondary",
+  "non_crop_tonal_improvement": 6.0,
+  "subject_separation_improvement": 5.2,
+  "color_intent_improvement": 6.3,
+  "highlight_shadow_quality": 6.4,
+  "composition_improvement": 4.0,
+  "crop_contribution": 1.0,
+  "perceived_non_crop_improvement": "weak",
+  "meaningful_non_crop_edit": false,
+  "non_crop_quality_pass_count": 0,
+  "non_crop_quality_pass_fields": [],
+  "crop_only_improvement": false,
+  "non_crop_edit_quality": "fail",
+  "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
+  "hierarchy_boost_applied": false,
+  "decision": "failed_edit_quality",
+  "export_gate_passed": false,
+  "gate_requirements": {
+    "meaningful_non_crop_requirements": {
+      "minimum_score": 7.0,
+      "minimum_pass_count": 2,
+      "fields": [
+        "subject_separation_improvement",
+        "non_crop_tonal_improvement",
+        "color_intent_improvement",
+        "highlight_shadow_quality"
+      ]
+    },
+    "subject_hierarchy_score_min": 7.0,
+    "thumbnail_subject_read_score_min": 7.0,
+    "artifact_free_score_min": 8.0,
+    "naturalness_score_min": 7.0,
+    "crop_dependency": "not primary",
+    "crop_contribution_max_for_export": 6.9,
+    "validation_allowed": true
+  },
+  "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
+  "visible_difference_score": 0.0,
+  "hierarchy_improvement_score": 5.2,
+  "export_requested": false,
+  "runtime_decision": "failed_edit_quality",
+  "decision_source": "verify_predictive_edit"
+}
+```
+
+## Manual Score Comparison
+```json
+{
+  "automated_scores": {
+    "global_visible_difference_score": 0.0,
+    "global_pixel_difference": 5.9,
+    "subject_hierarchy_score": 5.2,
+    "thumbnail_subject_read_score": 5.1,
+    "color_quality_score": 6.3,
+    "naturalness_score": 8.4,
+    "artifact_free_score": 9.0,
+    "artifact_check": "pass",
+    "crop_dependency": "secondary",
+    "non_crop_tonal_improvement": 6.0,
+    "subject_separation_improvement": 5.2,
+    "color_intent_improvement": 6.3,
+    "highlight_shadow_quality": 6.4,
+    "composition_improvement": 4.0,
+    "crop_contribution": 1.0,
+    "perceived_non_crop_improvement": "weak",
+    "meaningful_non_crop_edit": false,
+    "non_crop_quality_pass_count": 0,
+    "non_crop_quality_pass_fields": [],
+    "crop_only_improvement": false,
+    "non_crop_edit_quality": "fail",
+    "non_crop_edit_quality_reason": "Tonal/color changes are numerically visible but do not materially improve subject separation or visual intent.",
+    "hierarchy_boost_applied": false,
+    "decision": "failed_edit_quality",
+    "export_gate_passed": false,
+    "gate_requirements": {
+      "meaningful_non_crop_requirements": {
+        "minimum_score": 7.0,
+        "minimum_pass_count": 2,
+        "fields": [
+          "subject_separation_improvement",
+          "non_crop_tonal_improvement",
+          "color_intent_improvement",
+          "highlight_shadow_quality"
+        ]
+      },
+      "subject_hierarchy_score_min": 7.0,
+      "thumbnail_subject_read_score_min": 7.0,
+      "artifact_free_score_min": 8.0,
+      "naturalness_score_min": 7.0,
+      "crop_dependency": "not primary",
+      "crop_contribution_max_for_export": 6.9,
+      "validation_allowed": true
+    },
+    "scoring_guidance": "Hierarchy score should answer: does the intended subject become easier and faster to read than competing structures?",
+    "visible_difference_score": 0.0,
+    "hierarchy_improvement_score": 5.2,
+    "export_requested": false,
+    "runtime_decision": "failed_edit_quality",
+    "decision_source": "verify_predictive_edit"
+  },
+  "human_scores": {
+    "image": "IMG_1850",
+    "brief": "landscape cleanup with controlled sky highlights, reduced haze, and natural tonal depth",
+    "intensity": "medium",
+    "visible_difference": 6.1,
+    "hierarchy_improvement": 5.3,
+    "color_quality": 6.2,
+    "naturalness": 8.5,
+    "artifact_free": 9.0,
+    "crop_dependency": "none",
+    "non_crop_tonal_improvement": 6.3,
+    "subject_separation_improvement": 5.3,
+    "thumbnail_subject_read_score": 5.2,
+    "color_intent_improvement": 6.4,
+    "highlight_shadow_quality": 6.6,
+    "composition_improvement": 4.0,
+    "crop_contribution": 1.0,
+    "perceived_non_crop_improvement": "weak",
+    "decision_correct": "yes",
+    "notes": "Cloud and hillside definition improve modestly, midtones gain some structure, highlight control is better, color remains natural, no obvious artifact pattern appears, but the haze and broad scene hierarchy still do not become meaningfully stronger before any crop."
+  },
+  "score_delta": {
+    "visible_difference": "-6.1",
+    "hierarchy_improvement": "-0.1",
+    "color_quality": "+0.1",
+    "naturalness": "-0.1",
+    "artifact_free": "+0.0",
+    "non_crop_tonal_improvement": "-0.3",
+    "subject_separation_improvement": "-0.1",
+    "color_intent_improvement": "-0.1",
+    "highlight_shadow_quality": "-0.2",
+    "composition_improvement": "+0.0",
+    "crop_contribution": "+0.0",
+    "decision_correct": "yes"
+  }
+}
+```
+
+## Rendered Preview Files
+- base_preview: `docs/evaluations/runs_phase10/IMG_1850/base_preview.jpg`
+- predictive_preview: `docs/evaluations/runs_phase10/IMG_1850/predictive_preview.jpg`
+- before_after: `docs/evaluations/runs_phase10/IMG_1850/before_after.jpg`
+- profile: `docs/evaluations/runs_phase10/IMG_1850/predictive_profile.pp3`
+
+## Inline Image Availability
+```json
+{
+  "prepare": {
+    "attachment_available": true,
+    "image_count": 3,
+    "content_types": [
+      "text",
+      "image",
+      "image",
+      "image"
+    ]
+  },
+  "verify": {
+    "attachment_available": true,
+    "image_count": 3,
+    "content_types": [
+      "text",
+      "image",
+      "image",
+      "image"
+    ]
+  }
+}
+```
+
+## Visual Inspection Checklist
+- Subject readability improved
+- Thumbnail impact improved
+- Sky/highlights remain believable
+- No local-contrast crunch
+- Not crop-only

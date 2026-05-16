@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import Any, TypeGuard
 
 from rawtherapee_mcp.control_policy import (
+    build_agent_manifest_summary,
     get_approved_curve,
     is_control_allowed_autonomous,
     load_manifest,
+    validate_autonomous_parameters,
 )
 
 DIAGNOSIS_VOCAB = {
@@ -102,6 +104,14 @@ _INTEGER_NUMERIC_CONTROLS = {
     "Sharpening.Amount",
     "SharpenMicro.Amount",
 }
+
+_MANIFEST_SELECT_REQUIRED_FIELDS = (
+    "image_observation",
+    "vision_interpretation",
+    "control_selections",
+    "controls_considered_but_rejected",
+    "non_goals",
+)
 
 
 def _normalize_intensity(intensity: str) -> str:
@@ -636,6 +646,181 @@ def _friendly_parameters_from_controls(
 
 def _issue_names(diagnosis: list[dict[str, Any]]) -> set[str]:
     return {str(item.get("issue", "")) for item in diagnosis}
+
+
+def _manifest_summary_controls() -> dict[str, dict[str, Any]]:
+    summary = build_agent_manifest_summary()
+    controls = summary.get("controls", [])
+    if not isinstance(controls, list):
+        return {}
+    indexed: dict[str, dict[str, Any]] = {}
+    for entry in controls:
+        if isinstance(entry, dict):
+            control_id = entry.get("control_id")
+            if isinstance(control_id, str):
+                indexed[control_id] = entry
+    return indexed
+
+
+def _normalize_rejected_controls(rejected: Any) -> list[dict[str, Any]]:
+    if not isinstance(rejected, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in rejected:
+        if not isinstance(item, dict):
+            continue
+        control_id = str(item.get("control_id", item.get("capability", "unknown")))
+        reason = str(item.get("reason", ""))
+        normalized.append({"control_id": control_id, "reason": reason})
+    return normalized
+
+
+def _friendly_parameters_from_selected_controls(
+    control_values: dict[str, object],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    parameters: dict[str, Any] = {}
+    blocked: list[dict[str, Any]] = []
+    for control_id, value in control_values.items():
+        mapping = _CONTROL_TO_FRIENDLY.get(control_id)
+        if mapping is None:
+            blocked.append({"control_id": control_id, "reason": "No friendly mapping available"})
+            continue
+        group_name, param_key = mapping
+        group = parameters.setdefault(group_name, {})
+        if not isinstance(group, dict):
+            blocked.append({"control_id": control_id, "reason": "Invalid friendly parameter group"})
+            continue
+
+        if _is_number(value) and _manifest_entry(control_id) is not None:
+            entry = _manifest_entry(control_id)
+            if control_id in _INTEGER_NUMERIC_CONTROLS or (entry is not None and entry.get("value_type") == "integer"):
+                group[param_key] = int(round(float(value)))
+            else:
+                group[param_key] = round(float(value), 3)
+        else:
+            group[param_key] = value
+    return parameters, blocked
+
+
+def build_manifest_select_edit_plan(edit_plan: dict[str, Any]) -> dict[str, Any]:
+    """Validate and translate an LLM-supplied manifest-select edit plan."""
+    missing_fields = [field for field in _MANIFEST_SELECT_REQUIRED_FIELDS if field not in edit_plan]
+    if missing_fields:
+        return {"status": "edit_plan_invalid", "missing_fields": missing_fields}
+
+    image_observation = edit_plan.get("image_observation")
+    vision_interpretation = edit_plan.get("vision_interpretation")
+    control_selections = edit_plan.get("control_selections")
+    if not isinstance(image_observation, dict) or not isinstance(vision_interpretation, dict):
+        return {"status": "edit_plan_invalid", "missing_fields": ["image_observation", "vision_interpretation"]}
+    if not isinstance(control_selections, list):
+        return {"status": "edit_plan_invalid", "missing_fields": ["control_selections"]}
+
+    summary_controls = _manifest_summary_controls()
+    selected_control_values: dict[str, object] = {}
+    blocked: list[dict[str, Any]] = []
+    normalized_selections: list[dict[str, Any]] = []
+
+    for selection in control_selections:
+        if not isinstance(selection, dict):
+            blocked.append({"control_id": "unknown", "reason": "Control selection must be an object"})
+            continue
+        control_id = str(selection.get("control_id", ""))
+        if not control_id:
+            blocked.append({"control_id": "unknown", "reason": "Missing control_id"})
+            continue
+        summary_entry = summary_controls.get(control_id)
+        if summary_entry is None:
+            blocked.append(
+                {
+                    "control_id": control_id,
+                    "reason": "Control is not exposed in the compact manifest summary",
+                }
+            )
+            continue
+
+        approved_value_id = selection.get("approved_value_id")
+        if approved_value_id is not None:
+            approved_curve = get_approved_curve(str(approved_value_id))
+            if approved_curve is None:
+                blocked.append(
+                    {"control_id": control_id, "reason": f"Unknown approved_value_id: {approved_value_id}"}
+                )
+                continue
+            fields = approved_curve.get("pp3_fields")
+            if not isinstance(fields, dict) or control_id not in fields:
+                blocked.append(
+                    {
+                        "control_id": control_id,
+                        "reason": "approved_value_id does not apply to the selected control_id",
+                    }
+                )
+                continue
+            for expanded_control_id, expanded_value in fields.items():
+                if isinstance(expanded_control_id, str):
+                    selected_control_values[expanded_control_id] = expanded_value
+            normalized = dict(selection)
+            normalized["approved_value_id"] = str(approved_value_id)
+            normalized_selections.append(normalized)
+            continue
+
+        if "value" not in selection:
+            blocked.append(
+                {
+                    "control_id": control_id,
+                    "reason": "Selection must provide value or approved_value_id",
+                }
+            )
+            continue
+
+        if summary_entry.get("policy") in {"approved_curve_only", "approved_values_only"}:
+            blocked.append(
+                {
+                    "control_id": control_id,
+                    "reason": "This control requires approved_value_id and does not accept arbitrary values",
+                }
+            )
+            continue
+
+        selected_control_values[control_id] = selection.get("value")
+        normalized_selections.append(dict(selection))
+
+    parameters, mapping_blocked = _friendly_parameters_from_selected_controls(selected_control_values)
+    blocked.extend(mapping_blocked)
+
+    validation = validate_autonomous_parameters(parameters)
+    validation_blocked = [
+        {
+            "control_id": item.control_id,
+            "section": item.section,
+            "key": item.key,
+            "value": item.value,
+            "reason": item.reason,
+        }
+        for item in validation.blocked_controls
+    ]
+
+    return {
+        "status": "ok" if not blocked and validation.allowed else "control_selection_invalid",
+        "image_observation": image_observation,
+        "vision_interpretation": vision_interpretation,
+        "control_selections": normalized_selections,
+        "controls_considered_but_rejected": _normalize_rejected_controls(
+            edit_plan.get("controls_considered_but_rejected")
+        ),
+        "non_goals": [
+            str(item) for item in edit_plan.get("non_goals", []) if isinstance(item, str)
+        ]
+        if isinstance(edit_plan.get("non_goals"), list)
+        else [],
+        "parameters": parameters,
+        "blocked": blocked + validation_blocked,
+        "validation": {
+            "allowed": validation.allowed and not blocked,
+            "blocked": validation_blocked,
+            "warnings": validation.warnings,
+        },
+    }
 
 
 def score_predictive_export_decision(

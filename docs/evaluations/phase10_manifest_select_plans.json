@@ -1,0 +1,385 @@
+{
+  "IMG_1279": {
+    "image_observation": {
+      "main_subject": "green tram front entering the frame from the left rail corridor",
+      "supporting_elements": [
+        "converging rails",
+        "overhead wire grid",
+        "bright cloud mass behind the tram",
+        "palms and roadside poles"
+      ],
+      "distractions": [
+        "tall gray poles on the right",
+        "busy wire lattice competing with the tram silhouette",
+        "slightly muted grass and tram color"
+      ],
+      "tonal_state": "midtone geometry is a little flat and the tram does not separate as fast as the rails and poles suggest it should",
+      "color_state": "natural but slightly restrained; the tram green and grass could carry more presence without becoming synthetic",
+      "highlight_shadow_state": "cloud highlights are already bright but still believable; shadow detail is acceptable",
+      "composition_state": "strong rail perspective already works, so the edit should improve subject hierarchy without relying on crop"
+    },
+    "vision_interpretation": {
+      "user_goal": "make the tram read faster and give the frame stronger natural travel presence",
+      "desired_viewer_first_read": "tram nose first, then rails and cloud depth",
+      "desired_mood": "clean daylight travel image with stronger depth, not a filtered HDR look",
+      "must_preserve": [
+        "daylight realism",
+        "clean cloud brightness",
+        "tram color identity"
+      ],
+      "must_avoid": [
+        "fake HDR",
+        "local contrast crunch",
+        "crop-only improvement",
+        "cyan split in the sky"
+      ]
+    },
+    "control_selections": [
+      {
+        "control_id": "Exposure.Curve",
+        "approved_value_id": "tone_curve.midtone_depth_v1",
+        "reason": "Use the approved midtone-depth curve to make the tram and rail geometry read faster without inventing a new curve.",
+        "expected_effect": "clearer subject/background layering in the midtones",
+        "risk": "sky and poles could become too hard",
+        "risk_mitigation": "stay with the approved exact curve and keep other contrast lifts moderate"
+      },
+      {
+        "control_id": "Exposure.Compensation",
+        "value": 0.22,
+        "reason": "Open the frame slightly so the tram face and carriage body read more immediately.",
+        "expected_effect": "slightly brighter subject and cleaner first read",
+        "risk": "highlights could flatten",
+        "risk_mitigation": "keep the lift modest and avoid extra highlight compression unless needed"
+      },
+      {
+        "control_id": "Exposure.Contrast",
+        "value": 10,
+        "reason": "Support the rail and tram geometry with moderate global contrast rather than coarse local contrast.",
+        "expected_effect": "more defined subject silhouette and stronger rail structure",
+        "risk": "blocked shadows and harsh poles",
+        "risk_mitigation": "keep below the top of the manifest range and avoid stacking with aggressive sharpening"
+      },
+      {
+        "control_id": "Luminance Curve.Enabled",
+        "value": true,
+        "reason": "Use the safer luminance-domain module for restrained depth shaping.",
+        "expected_effect": "more separation without RGB color distortion",
+        "risk": "nonlinear tone response",
+        "risk_mitigation": "pair with avoid-color-shift and moderate contrast only"
+      },
+      {
+        "control_id": "Luminance Curve.Contrast",
+        "value": 8,
+        "reason": "Add controlled midtone depth around the tram, rails, and cloud volume.",
+        "expected_effect": "stronger luminance depth in the image core",
+        "risk": "local harshness",
+        "risk_mitigation": "stay in the middle of the validated range"
+      },
+      {
+        "control_id": "Luminance Curve.AvoidColorShift",
+        "value": true,
+        "reason": "Protect the natural color relationships while increasing depth.",
+        "expected_effect": "less hue drift while shaping luminance",
+        "risk": "reduced effect",
+        "risk_mitigation": "accept lower intensity in exchange for cleaner color"
+      },
+      {
+        "control_id": "SharpenMicro.Enabled",
+        "value": true,
+        "reason": "Enable restrained microcontrast to support the tram front and rail texture.",
+        "expected_effect": "slightly clearer fine structure",
+        "risk": "grit and micro-halos",
+        "risk_mitigation": "use a low amount and avoid local contrast"
+      },
+      {
+        "control_id": "SharpenMicro.Amount",
+        "value": 6,
+        "reason": "Give the subject a little more edge definition without pushing into crunchy structure.",
+        "expected_effect": "crisper but still natural detail",
+        "risk": "wire and pole harshness",
+        "risk_mitigation": "keep well below the top of the range"
+      },
+      {
+        "control_id": "Vibrance.Enabled",
+        "value": true,
+        "reason": "Turn on vibrance so muted greens and travel color can lift selectively.",
+        "expected_effect": "more color presence without a blanket saturation push",
+        "risk": "color exaggeration",
+        "risk_mitigation": "bias the move toward pastels instead of saturated colors"
+      },
+      {
+        "control_id": "Vibrance.Pastels",
+        "value": 7,
+        "reason": "Strengthen low-saturation greens and sky transitions gently.",
+        "expected_effect": "richer but still believable color",
+        "risk": "pastel oversaturation",
+        "risk_mitigation": "keep the number below the top half of the range"
+      },
+      {
+        "control_id": "Vibrance.Saturated",
+        "value": 3,
+        "reason": "Avoid overdriving already bright parts of the frame while still giving color a lift.",
+        "expected_effect": "controlled saturation support",
+        "risk": "cartoonish rendering if too high",
+        "risk_mitigation": "keep the saturated channel lift lower than the pastel lift"
+      },
+      {
+        "control_id": "Vibrance.ProtectSkins",
+        "value": true,
+        "reason": "Use the manifest safety flag even though skin is minor in frame.",
+        "expected_effect": "reduce odd hue shifts in people and reflections",
+        "risk": "less vibrance impact",
+        "risk_mitigation": "acceptable trade-off for cleaner color"
+      },
+      {
+        "control_id": "Vibrance.AvoidColorShift",
+        "value": true,
+        "reason": "Keep the color lift natural rather than filter-like.",
+        "expected_effect": "more stable hue relationships",
+        "risk": "reduced color intensity",
+        "risk_mitigation": "accept slightly lower force to preserve realism"
+      }
+    ],
+    "controls_considered_but_rejected": [
+      {
+        "control_id": "Local Contrast.Amount",
+        "reason": "Blocked by manifest due to prior artifact evidence and too likely to make wires and poles harsh."
+      },
+      {
+        "control_id": "HSV Equalizer.HCurve",
+        "reason": "Blocked by manifest and too easy to push the sky and tram green into a synthetic look."
+      }
+    ],
+    "non_goals": [
+      "do not create fake HDR",
+      "do not rely on crop as the main improvement",
+      "do not harden the cloud edges"
+    ]
+  },
+  "IMG_1850": {
+    "image_observation": {
+      "main_subject": "coastal hillside and shoreline sweeping around the bay",
+      "supporting_elements": [
+        "cloud bank over the ridge",
+        "green field patterning on the hillside",
+        "harbor water and boats",
+        "village roofs along the coast"
+      ],
+      "distractions": [
+        "gray atmospheric haze over the hill and cloud base",
+        "weak tonal separation between cloud shadow, ridge, and field texture",
+        "slightly chalky brightness in the upper frame"
+      ],
+      "tonal_state": "the scene is veiled and low-clarity; structure is present but softened by haze",
+      "color_state": "greens and water are believable but a little washed by the atmospheric veil",
+      "highlight_shadow_state": "the cloud bank is bright and broad; highlight protection matters more than shadow lift",
+      "composition_state": "the composition is already clean and panoramic, so the edit should not pretend framing is the answer"
+    },
+    "vision_interpretation": {
+      "user_goal": "clean up the landscape, keep cloud highlights under control, and increase natural tonal depth",
+      "desired_viewer_first_read": "coastline sweep first, then hillside patchwork and cloud structure",
+      "desired_mood": "clearer Atlantic daylight, still honest about the weather and haze",
+      "must_preserve": [
+        "natural cloud brightness",
+        "believable greens",
+        "soft coastal atmosphere"
+      ],
+      "must_avoid": [
+        "fake HDR",
+        "gray haze from over-compression",
+        "oversharpening",
+        "crop-only improvement"
+      ]
+    },
+    "control_selections": [
+      {
+        "control_id": "Luminance Curve.lhCurve",
+        "approved_value_id": "luminance_curve.landscape_depth_v1",
+        "reason": "Use the approved landscape tonal-depth preset as the safest available way to add hillside structure.",
+        "expected_effect": "better lower-midtone depth through fields and shoreline",
+        "risk": "haze transitions can feel too hard",
+        "risk_mitigation": "stay with the approved exact preset rather than inventing a stronger curve"
+      },
+      {
+        "control_id": "Exposure.HighlightCompr",
+        "value": 20,
+        "reason": "Compress the brightest cloud values slightly so the ridge and cloud mass can coexist more cleanly.",
+        "expected_effect": "better cloud control with less chalky glare",
+        "risk": "flat or gray highlights",
+        "risk_mitigation": "keep the setting moderate and avoid stacking too much local highlight processing"
+      },
+      {
+        "control_id": "Exposure.HighlightComprThreshold",
+        "value": 34,
+        "reason": "Start compression high enough to target the cloud bank rather than the whole frame.",
+        "expected_effect": "more selective highlight control",
+        "risk": "highlight transition artifacts",
+        "risk_mitigation": "use conservatively because evidence is still pending"
+      },
+      {
+        "control_id": "Exposure.Contrast",
+        "value": 6,
+        "reason": "Support the shoreline and field patterning with a mild contrast increase.",
+        "expected_effect": "slightly clearer scene hierarchy",
+        "risk": "more brittle haze transitions",
+        "risk_mitigation": "keep the number modest"
+      },
+      {
+        "control_id": "Vibrance.Enabled",
+        "value": true,
+        "reason": "Enable selective color support so the greens and water recover presence without becoming loud.",
+        "expected_effect": "cleaner color separation in vegetation and sea",
+        "risk": "tourist-postcard oversaturation",
+        "risk_mitigation": "lift pastels more than already saturated colors"
+      },
+      {
+        "control_id": "Vibrance.Pastels",
+        "value": 5,
+        "reason": "The haze has muted the quieter greens; a selective pastel lift can help them read.",
+        "expected_effect": "better low-saturation color presence",
+        "risk": "unnatural green lift",
+        "risk_mitigation": "keep the move restrained"
+      },
+      {
+        "control_id": "Vibrance.Saturated",
+        "value": 2,
+        "reason": "Keep already-bright colors from overshooting while still adding a little support.",
+        "expected_effect": "modest saturation reinforcement",
+        "risk": "clipped color if too strong",
+        "risk_mitigation": "stay very low"
+      },
+      {
+        "control_id": "Vibrance.AvoidColorShift",
+        "value": true,
+        "reason": "Protect the coastline and field hues from drifting while adding color.",
+        "expected_effect": "cleaner hue stability",
+        "risk": "less visible impact",
+        "risk_mitigation": "acceptable because realism matters more than force"
+      }
+    ],
+    "controls_considered_but_rejected": [
+      {
+        "control_id": "Retinex",
+        "reason": "A haze-specific global or local dehaze family would likely help this image, but it is not available in the current manifest and cannot be selected."
+      },
+      {
+        "control_id": "Local Contrast.Amount",
+        "reason": "Blocked by manifest and likely to turn the haze/cloud transitions brittle."
+      },
+      {
+        "control_id": "HSV Equalizer.HCurve",
+        "reason": "Blocked by manifest and too likely to fake the landscape color rather than solve the atmospheric veil."
+      }
+    ],
+    "non_goals": [
+      "do not create fake HDR",
+      "do not pretend crop solves the haze problem",
+      "do not harden the cloud edge unnaturally"
+    ]
+  },
+  "IMG_3709": {
+    "image_observation": {
+      "main_subject": "person standing on the beach at dusk",
+      "supporting_elements": [
+        "sand texture",
+        "dark cliff line",
+        "soft dusk sky",
+        "distant rescue ring structure"
+      ],
+      "distractions": [
+        "subject face and body fall into shadow",
+        "overall frame is low-contrast and low-light",
+        "noise risk if shadows are lifted too hard"
+      ],
+      "tonal_state": "the subject is under-read and the scene is dim, but the darkness is part of the mood",
+      "color_state": "warm dusk tone is natural and should stay restrained",
+      "highlight_shadow_state": "there are no aggressive highlights; the main danger is milky shadow lift and noisy low-light structure",
+      "composition_state": "the composition is already about the person in open space, so the edit should improve subject readability without changing the framing logic"
+    },
+    "vision_interpretation": {
+      "user_goal": "recover the low-light image naturally so the subject reads better while keeping the dusk feeling intact",
+      "desired_viewer_first_read": "person first, then beach and cliff context",
+      "desired_mood": "quiet dusk realism, not flash-lit rescue",
+      "must_preserve": [
+        "dusk atmosphere",
+        "shadow mood",
+        "natural skin and beach color"
+      ],
+      "must_avoid": [
+        "crunchy noise",
+        "over-bright shadows",
+        "plastic smoothing",
+        "crop-only improvement"
+      ]
+    },
+    "control_selections": [
+      {
+        "control_id": "Luminance Curve.lhCurve",
+        "approved_value_id": "luminance_curve.low_light_lift_v1",
+        "reason": "Use the approved low-light tonal-depth preset as the safest subject-facing lift available in the manifest.",
+        "expected_effect": "slightly easier subject read without flattening the frame",
+        "risk": "noise becomes more obvious",
+        "risk_mitigation": "use the approved exact preset and avoid stronger local shadow recovery"
+      },
+      {
+        "control_id": "Exposure.Compensation",
+        "value": 0.16,
+        "reason": "Open the frame a little so the subject face and torso rise out of the dusk floor.",
+        "expected_effect": "slightly brighter subject read",
+        "risk": "losing the dusk mood",
+        "risk_mitigation": "keep the lift very small"
+      },
+      {
+        "control_id": "Exposure.Saturation",
+        "value": 2,
+        "reason": "Give the dusk frame a small color reinforcement without making it glow artificially.",
+        "expected_effect": "slightly stronger warm dusk color",
+        "risk": "artificial sunset color",
+        "risk_mitigation": "keep the number low and avoid extra WB shifts"
+      },
+      {
+        "control_id": "Vibrance.Enabled",
+        "value": true,
+        "reason": "Use selective color support instead of a heavy global saturation move.",
+        "expected_effect": "a little more color presence in the low-saturation dusk tones",
+        "risk": "color noise or odd hue drift",
+        "risk_mitigation": "keep both vibrance amounts restrained"
+      },
+      {
+        "control_id": "Vibrance.Pastels",
+        "value": 4,
+        "reason": "Lift the muted dusk tones slightly so the frame feels less dead.",
+        "expected_effect": "gentle pastel color presence",
+        "risk": "noisy or fake color",
+        "risk_mitigation": "stay low and do not push saturated colors"
+      },
+      {
+        "control_id": "Vibrance.Saturated",
+        "value": 1,
+        "reason": "Keep the already-dark scene from turning overly stylized.",
+        "expected_effect": "minimal support for stronger hues",
+        "risk": "cartoon color if overdone",
+        "risk_mitigation": "set near the bottom of the range"
+      }
+    ],
+    "controls_considered_but_rejected": [
+      {
+        "control_id": "Shadows & Highlights.Shadows",
+        "reason": "Available but pending-evidence and likely to create milky shadows or noise in this low-light frame."
+      },
+      {
+        "control_id": "Local Contrast.Amount",
+        "reason": "Blocked by manifest and too risky for high-ISO dusk texture."
+      },
+      {
+        "control_id": "Retinex",
+        "reason": "A more capable local low-light recovery family might help the subject, but it is not available in the current manifest."
+      }
+    ],
+    "non_goals": [
+      "do not brighten the beach like daylight",
+      "do not create crunchy noise",
+      "do not rely on crop as the main improvement"
+    ]
+  }
+}

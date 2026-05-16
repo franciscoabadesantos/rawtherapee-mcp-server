@@ -17,6 +17,7 @@ from rawtherapee_mcp.control_policy import find_approved_curve
 from rawtherapee_mcp.predictive_editor import score_predictive_export_decision
 from rawtherapee_mcp.server import (
     auto_edit_predictive_prepare as auto_edit_predictive,
+    auto_edit_manifest_select_prepare,
     preview_before_after,
     preview_raw,
     verify_predictive_edit,
@@ -460,6 +461,9 @@ async def run_predictive_evaluation(
     preview_width: int = 1024,
     export: bool = False,
     output_root: Path | None = None,
+    prepare_mode: str = "deterministic",
+    edit_plan: dict[str, Any] | None = None,
+    verification_observations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run predictive-edit evaluation and write file artifacts + reports."""
     source = Path(raw_path)
@@ -482,16 +486,28 @@ async def run_predictive_evaluation(
         base_preview_fallback = cast(str | None, base_probe_payload.get("preview_path"))
 
     human_scores = _load_human_score(source, brief, intensity)
-    verification_observations = _human_score_to_verification_observations(human_scores)
-
-    prepare_result = await auto_edit_predictive(
-        ctx,
-        raw_path=str(source),
-        style=style or brief,
-        intensity=intensity,
-        user_brief=brief,
-        preview_width=preview_width,
+    resolved_verification_observations = (
+        verification_observations if isinstance(verification_observations, dict) else _human_score_to_verification_observations(human_scores)
     )
+
+    if prepare_mode == "manifest_select":
+        if not isinstance(edit_plan, dict):
+            return {"error": "manifest_select requires edit_plan"}
+        prepare_result = await auto_edit_manifest_select_prepare(
+            ctx,
+            raw_path=str(source),
+            edit_plan=edit_plan,
+            preview_width=preview_width,
+        )
+    else:
+        prepare_result = await auto_edit_predictive(
+            ctx,
+            raw_path=str(source),
+            style=style or brief,
+            intensity=intensity,
+            user_brief=brief,
+            preview_width=preview_width,
+        )
     prepare_payload = _structured_payload(prepare_result)
     prepare_image_metadata = _tool_image_metadata(prepare_result)
     if "error" in prepare_payload:
@@ -505,7 +521,7 @@ async def run_predictive_evaluation(
             profile_path=str(prepare_payload.get("profile_path", "")),
             base_preview_path=str(prepare_payload.get("base_preview_path", "")),
             edited_preview_path=str(prepare_payload.get("edited_preview_path", "")),
-            verification_observations=verification_observations,
+            verification_observations=resolved_verification_observations,
             export=export,
             before_after_path=cast(str | None, prepare_payload.get("before_after_path")),
             preview_width=preview_width,
@@ -604,6 +620,7 @@ async def run_predictive_evaluation(
         "brief": brief,
         "intensity": intensity,
         "style": style or brief,
+        "prepare_mode": prepare_mode,
         "diagnosis": prepare_payload.get("diagnosis", {}).get("diagnosis", []),
         "prepare_output": prepare_payload,
         "parameters": parameters,

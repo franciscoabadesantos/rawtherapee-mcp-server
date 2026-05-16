@@ -19,6 +19,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--preview-width", type=int, default=1024, help="Preview width")
     parser.add_argument("--export", action="store_true", help="Request export through gate")
     parser.add_argument(
+        "--prepare-mode",
+        default="deterministic",
+        choices=["deterministic", "manifest_select"],
+        help="Prepare path to evaluate",
+    )
+    parser.add_argument(
+        "--edit-plan-file",
+        default=None,
+        help="JSON file containing a manifest-select edit plan",
+    )
+    parser.add_argument(
         "--output-root",
         default="docs/evaluations/runs",
         help="Output directory root for evaluation artifacts",
@@ -37,6 +48,12 @@ def main() -> int:
             preview_width=args.preview_width,
             export=bool(args.export),
             output_root=Path(args.output_root),
+            prepare_mode=args.prepare_mode,
+            edit_plan=(
+                json.loads(Path(args.edit_plan_file).read_text(encoding="utf-8"))
+                if args.edit_plan_file
+                else None
+            ),
         )
     )
     print(json.dumps(report, indent=2))

@@ -1,0 +1,77 @@
+{
+  "IMG_1279": {
+    "subject_change_description": "The tram nose reads faster and the carriage body separates more clearly from the rails and wire grid without changing the composition.",
+    "background_change_description": "The rails and cloud mass gain a little more layered depth, but the poles and wires remain believable rather than harsh.",
+    "midtone_change_description": "Midtones are more structured through the tram body, rails, and grass corridor, giving the frame a stronger geometric read.",
+    "highlight_shadow_description": "Cloud highlights stay believable and shadows do not block up noticeably.",
+    "color_change_description": "The tram green and muted grass feel a touch richer and more travel-like without drifting into a fake filter look.",
+    "artifact_description": "No obvious halos, crunchy edges, or cyan split appear in the sky or wire structure.",
+    "crop_dependency_description": "The visible gain is tonal, color, and subject hierarchy rather than crop-driven.",
+    "scores": {
+      "global_pixel_difference": 8.1,
+      "subject_separation_improvement": 7.1,
+      "non_crop_tonal_improvement": 6.9,
+      "color_intent_improvement": 7.8,
+      "highlight_shadow_quality": 6.5,
+      "composition_improvement": 4.0,
+      "crop_contribution": 2.0,
+      "perceived_non_crop_improvement": "moderate",
+      "artifact_check": "pass",
+      "naturalness_score": 8.0,
+      "artifact_free_score": 8.0,
+      "subject_hierarchy_score": 7.1,
+      "thumbnail_subject_read_score": 6.9,
+      "color_quality_score": 7.8
+    }
+  },
+  "IMG_1850": {
+    "subject_change_description": "The coastline sweep and field patterning read a little more clearly, but the haze still keeps the hill from separating strongly.",
+    "background_change_description": "Cloud and ridge relationships are slightly cleaner, though the broad atmospheric veil remains the main limiter.",
+    "midtone_change_description": "Midtones gain a modest amount of hillside structure and shoreline definition but not enough to feel like a materially stronger landscape edit.",
+    "highlight_shadow_description": "The cloud bank is a bit better controlled, but the upper frame still feels bright and veiled rather than decisively shaped.",
+    "color_change_description": "Greens and water gain some presence while staying natural, but the scene still looks weather-soft rather than crisply resolved.",
+    "artifact_description": "No obvious halos or fake-HDR transitions appear, but the image still carries a gray haze ceiling.",
+    "crop_dependency_description": "Any gain is tonal and color based; the weakness comes from limited haze-removal capability rather than framing.",
+    "scores": {
+      "global_pixel_difference": 5.9,
+      "subject_separation_improvement": 5.2,
+      "non_crop_tonal_improvement": 6.0,
+      "color_intent_improvement": 6.3,
+      "highlight_shadow_quality": 6.4,
+      "composition_improvement": 4.0,
+      "crop_contribution": 1.0,
+      "perceived_non_crop_improvement": "weak",
+      "artifact_check": "pass",
+      "naturalness_score": 8.4,
+      "artifact_free_score": 9.0,
+      "subject_hierarchy_score": 5.2,
+      "thumbnail_subject_read_score": 5.1,
+      "color_quality_score": 6.3
+    }
+  },
+  "IMG_3709": {
+    "subject_change_description": "The person becomes slightly easier to read against the sand, but the frame still feels intentionally dim and subdued.",
+    "background_change_description": "The beach and cliff context change only a little, which keeps the dusk mood intact.",
+    "midtone_change_description": "There is a small lift in the subject-facing midtones, but not enough to create a strong non-crop transformation.",
+    "highlight_shadow_description": "Highlights remain calm and the shadow lift stays restrained, avoiding a milky look.",
+    "color_change_description": "Warm dusk color is only slightly stronger and remains natural.",
+    "artifact_description": "No obvious noise crunch, plastic smoothing, or halo pattern is introduced, but the gain remains modest.",
+    "crop_dependency_description": "The change is not crop-driven; it is simply a small tonal recovery that does not cross into a strong edit.",
+    "scores": {
+      "global_pixel_difference": 4.9,
+      "subject_separation_improvement": 4.5,
+      "non_crop_tonal_improvement": 4.9,
+      "color_intent_improvement": 5.0,
+      "highlight_shadow_quality": 5.1,
+      "composition_improvement": 4.0,
+      "crop_contribution": 1.0,
+      "perceived_non_crop_improvement": "weak",
+      "artifact_check": "pass",
+      "naturalness_score": 8.3,
+      "artifact_free_score": 9.0,
+      "subject_hierarchy_score": 4.5,
+      "thumbnail_subject_read_score": 4.4,
+      "color_quality_score": 5.0
+    }
+  }
+}

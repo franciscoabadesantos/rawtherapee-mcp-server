@@ -1,0 +1,149 @@
+{
+  "images": {
+    "IMG_1279": {
+      "decision_phase9": "proof_plus",
+      "decision_phase10": "proof_plus",
+      "perceived_non_crop_improvement_phase9": "moderate",
+      "perceived_non_crop_improvement_phase10": "moderate",
+      "subject_separation_improvement_phase9": 7.2,
+      "subject_separation_improvement_phase10": 7.1,
+      "non_crop_tonal_improvement_phase9": 7.0,
+      "non_crop_tonal_improvement_phase10": 6.9,
+      "color_intent_improvement_phase9": 8.1,
+      "color_intent_improvement_phase10": 7.8,
+      "highlight_shadow_quality_phase9": 6.6,
+      "highlight_shadow_quality_phase10": 6.5,
+      "naturalness_score_phase9": 8.0,
+      "naturalness_score_phase10": 8.0,
+      "artifact_free_score_phase9": 8.0,
+      "artifact_free_score_phase10": 8.0,
+      "controls_selected_phase10": [
+        "Exposure.Curve",
+        "Exposure.Compensation",
+        "Exposure.Contrast",
+        "Luminance Curve.Enabled",
+        "Luminance Curve.Contrast",
+        "Luminance Curve.AvoidColorShift",
+        "SharpenMicro.Enabled",
+        "SharpenMicro.Amount",
+        "Vibrance.Enabled",
+        "Vibrance.Pastels",
+        "Vibrance.Saturated",
+        "Vibrance.ProtectSkins",
+        "Vibrance.AvoidColorShift"
+      ],
+      "controls_rejected_phase10": [
+        {
+          "control_id": "Local Contrast.Amount",
+          "reason": "Blocked by manifest due to prior artifact evidence and too likely to make wires and poles harsh."
+        },
+        {
+          "control_id": "HSV Equalizer.HCurve",
+          "reason": "Blocked by manifest and too easy to push the sky and tram green into a synthetic look."
+        }
+      ],
+      "validation_failures_phase10": [],
+      "prepare_decision_phase10": "verification_required",
+      "decision_source_phase10": "verify_predictive_edit"
+    },
+    "IMG_1850": {
+      "decision_phase9": "failed_edit_quality",
+      "decision_phase10": "failed_edit_quality",
+      "perceived_non_crop_improvement_phase9": "weak",
+      "perceived_non_crop_improvement_phase10": "weak",
+      "subject_separation_improvement_phase9": 5.3,
+      "subject_separation_improvement_phase10": 5.2,
+      "non_crop_tonal_improvement_phase9": 6.3,
+      "non_crop_tonal_improvement_phase10": 6.0,
+      "color_intent_improvement_phase9": 6.4,
+      "color_intent_improvement_phase10": 6.3,
+      "highlight_shadow_quality_phase9": 6.6,
+      "highlight_shadow_quality_phase10": 6.4,
+      "naturalness_score_phase9": 8.5,
+      "naturalness_score_phase10": 8.4,
+      "artifact_free_score_phase9": 9.0,
+      "artifact_free_score_phase10": 9.0,
+      "controls_selected_phase10": [
+        "Luminance Curve.lhCurve",
+        "Exposure.HighlightCompr",
+        "Exposure.HighlightComprThreshold",
+        "Exposure.Contrast",
+        "Vibrance.Enabled",
+        "Vibrance.Pastels",
+        "Vibrance.Saturated",
+        "Vibrance.AvoidColorShift"
+      ],
+      "controls_rejected_phase10": [
+        {
+          "control_id": "Retinex",
+          "reason": "A haze-specific global or local dehaze family would likely help this image, but it is not available in the current manifest and cannot be selected."
+        },
+        {
+          "control_id": "Local Contrast.Amount",
+          "reason": "Blocked by manifest and likely to turn the haze/cloud transitions brittle."
+        },
+        {
+          "control_id": "HSV Equalizer.HCurve",
+          "reason": "Blocked by manifest and too likely to fake the landscape color rather than solve the atmospheric veil."
+        }
+      ],
+      "validation_failures_phase10": [],
+      "prepare_decision_phase10": "verification_required",
+      "decision_source_phase10": "verify_predictive_edit"
+    },
+    "IMG_3709": {
+      "decision_phase9": "proof_only",
+      "decision_phase10": "proof_only",
+      "perceived_non_crop_improvement_phase9": "weak",
+      "perceived_non_crop_improvement_phase10": "weak",
+      "subject_separation_improvement_phase9": 4.6,
+      "subject_separation_improvement_phase10": 4.5,
+      "non_crop_tonal_improvement_phase9": 5.0,
+      "non_crop_tonal_improvement_phase10": 4.9,
+      "color_intent_improvement_phase9": 5.1,
+      "color_intent_improvement_phase10": 5.0,
+      "highlight_shadow_quality_phase9": 5.0,
+      "highlight_shadow_quality_phase10": 5.1,
+      "naturalness_score_phase9": 8.3,
+      "naturalness_score_phase10": 8.3,
+      "artifact_free_score_phase9": 9.0,
+      "artifact_free_score_phase10": 9.0,
+      "controls_selected_phase10": [
+        "Luminance Curve.lhCurve",
+        "Exposure.Compensation",
+        "Exposure.Saturation",
+        "Vibrance.Enabled",
+        "Vibrance.Pastels",
+        "Vibrance.Saturated"
+      ],
+      "controls_rejected_phase10": [
+        {
+          "control_id": "Shadows & Highlights.Shadows",
+          "reason": "Available but pending-evidence and likely to create milky shadows or noise in this low-light frame."
+        },
+        {
+          "control_id": "Local Contrast.Amount",
+          "reason": "Blocked by manifest and too risky for high-ISO dusk texture."
+        },
+        {
+          "control_id": "Retinex",
+          "reason": "A more capable local low-light recovery family might help the subject, but it is not available in the current manifest."
+        }
+      ],
+      "validation_failures_phase10": [],
+      "prepare_decision_phase10": "verification_required",
+      "decision_source_phase10": "verify_predictive_edit"
+    }
+  },
+  "protocol_checks": {
+    "prepare_never_final_decision": true,
+    "verify_only_final_step": true
+  },
+  "aggregate": {
+    "phase10_decisions": {
+      "IMG_1279": "proof_plus",
+      "IMG_1850": "failed_edit_quality",
+      "IMG_3709": "proof_only"
+    }
+  }
+}

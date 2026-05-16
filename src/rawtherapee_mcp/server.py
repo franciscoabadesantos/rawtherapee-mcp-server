@@ -25,7 +25,7 @@ from PIL import Image as PILImage
 from rawtherapee_mcp import __version__
 from rawtherapee_mcp.advanced_color import merge_parameter_sets
 from rawtherapee_mcp.config import RTConfig, load_config
-from rawtherapee_mcp.control_policy import validate_autonomous_parameters
+from rawtherapee_mcp.control_policy import build_agent_manifest_summary, validate_autonomous_parameters
 from rawtherapee_mcp.device_presets import (
     add_custom_preset,
     delete_custom_preset,
@@ -79,6 +79,7 @@ from rawtherapee_mcp.pp3_generator import (
 from rawtherapee_mcp.pp3_generator import generate_profile as _generate_profile
 from rawtherapee_mcp.pp3_parser import PP3Profile
 from rawtherapee_mcp.predictive_editor import (
+    build_manifest_select_edit_plan,
     build_predictive_edit_plan,
     score_predictive_export_decision,
 )
@@ -1507,6 +1508,124 @@ async def _tool_result_with_preview_images(
     return ToolResult(content=content, structured_content=payload)
 
 
+async def _prepare_manifest_select_packet(
+    ctx: Context,
+    *,
+    raw_path: str,
+    edit_plan: dict[str, Any],
+    preview_width: int,
+) -> dict[str, Any]:
+    config = get_config(ctx)
+    rt_check = _require_rt(config)
+    if isinstance(rt_check, dict):
+        return rt_check
+
+    try:
+        source_raw = ensure_existing_file(raw_path)
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    translated = build_manifest_select_edit_plan(edit_plan)
+    if translated.get("status") == "edit_plan_invalid":
+        return {
+            "status": "edit_plan_invalid",
+            "decision": "verification_required_not_reached",
+            "missing_fields": translated.get("missing_fields", []),
+        }
+
+    if translated.get("status") == "control_selection_invalid":
+        return {
+            "status": "control_selection_invalid",
+            "decision": "verification_required_not_reached",
+            "raw_path": str(source_raw),
+            "image_observation": translated.get("image_observation", {}),
+            "vision_interpretation": translated.get("vision_interpretation", {}),
+            "control_selections": translated.get("control_selections", []),
+            "controls_considered_but_rejected": translated.get("controls_considered_but_rejected", []),
+            "non_goals": translated.get("non_goals", []),
+            "blocked": translated.get("blocked", []),
+            "validation": translated.get("validation", {}),
+        }
+
+    parameters = translated.get("parameters", {})
+    if not isinstance(parameters, dict):
+        parameters = {}
+
+    profile_name = safe_slug(f"{source_raw.stem}_manifest_select")
+    templates_dir = _get_templates_dir()
+    try:
+        _profile, profile_path = _generate_profile(
+            name=profile_name,
+            base_template="neutral",
+            parameters=parameters,
+            device_preset=None,
+            templates_dir=templates_dir,
+            custom_templates_dir=config.custom_templates_dir,
+        )
+    except FileNotFoundError as exc:
+        return {"error": str(exc)}
+
+    edited_preview_result = await _render_preview(
+        config,
+        source_raw,
+        Path(profile_path),
+        max_width=preview_width,
+        label="manifest_select",
+    )
+    if not edited_preview_result.get("success"):
+        return {
+            "error": "Failed to render manifest-select preview",
+            "details": edited_preview_result,
+            "profile_path": str(profile_path),
+            "parameters": parameters,
+            "validation": translated.get("validation", {}),
+        }
+
+    base_preview_result = await _render_preview(
+        config,
+        source_raw,
+        PP3Profile(),
+        max_width=preview_width,
+        label="manifest_select_base",
+    )
+    if not base_preview_result.get("success"):
+        return {
+            "error": "Failed to render base preview",
+            "details": base_preview_result,
+            "profile_path": str(profile_path),
+            "parameters": parameters,
+            "validation": translated.get("validation", {}),
+        }
+
+    before_after_name = f"manifest_select_compare_{source_raw.stem}_{int(time.time() * 1000)}.jpg"
+    before_after_path = _build_before_after_preview(
+        base_preview_path=base_preview_result.get("preview_path"),
+        edited_preview_path=edited_preview_result.get("preview_path"),
+        output_path=config.preview_dir / before_after_name,
+    )
+
+    return {
+        "status": "verification_required",
+        "decision": "verification_required",
+        "decision_source": "auto_edit_manifest_select_prepare",
+        "prepare_mode": "manifest_select",
+        "raw_path": str(source_raw),
+        "profile_path": str(profile_path),
+        "base_preview_path": base_preview_result.get("preview_path"),
+        "edited_preview_path": edited_preview_result.get("preview_path"),
+        "preview_path": edited_preview_result.get("preview_path"),
+        "before_after_path": before_after_path,
+        "image_observation": translated.get("image_observation", {}),
+        "vision_interpretation": translated.get("vision_interpretation", {}),
+        "control_selections": translated.get("control_selections", []),
+        "controls_considered_but_rejected": translated.get("controls_considered_but_rejected", []),
+        "non_goals": translated.get("non_goals", []),
+        "parameters": parameters,
+        "validation": translated.get("validation", {}),
+        "verification_packet": _verification_packet(str(translated.get("image_observation", {}).get("main_subject", "primary subject"))),
+    }
+
+
 def _normalize_verification_observed_scores(
     raw_scores: dict[str, Any],
     *,
@@ -1731,6 +1850,7 @@ async def _prepare_predictive_packet(
         "status": "verification_required",
         "decision": "verification_required",
         "decision_source": "auto_edit_predictive_prepare",
+        "prepare_mode": "deterministic_routing_fallback",
         "raw_path": str(source_raw),
         "profile_path": str(profile_path),
         "base_preview_path": base_preview_result.get("preview_path"),
@@ -1776,6 +1896,40 @@ async def auto_edit_predictive_prepare(
         user_brief=user_brief,
         preview_width=preview_width,
         diagnosis_override=diagnosis_override,
+    )
+    if prepared.get("status") != "verification_required":
+        return prepared
+    return await _tool_result_with_preview_images(
+        prepared,
+        max_width=preview_width,
+        image_paths=[
+            prepared.get("base_preview_path"),
+            prepared.get("edited_preview_path"),
+            prepared.get("before_after_path"),
+        ],
+    )
+
+
+@mcp.tool()
+async def get_compact_manifest_summary(ctx: Context) -> dict[str, Any]:
+    """Return a compact agent-facing manifest summary for LLM control selection."""
+    _ = get_config(ctx)
+    return build_agent_manifest_summary()
+
+
+@mcp.tool()
+async def auto_edit_manifest_select_prepare(
+    ctx: Context,
+    raw_path: str,
+    edit_plan: dict[str, Any],
+    preview_width: int = 1024,
+) -> dict[str, Any] | ToolResult:
+    """Prepare a manifest-select edit from an LLM-supplied plan and return previews for verification."""
+    prepared = await _prepare_manifest_select_packet(
+        ctx,
+        raw_path=raw_path,
+        edit_plan=edit_plan,
+        preview_width=preview_width,
     )
     if prepared.get("status") != "verification_required":
         return prepared
@@ -1918,9 +2072,12 @@ async def auto_edit_predictive(
     )
     if isinstance(prepared, dict):
         prepared["deprecated"] = True
+        prepared["fallback_only"] = True
+        prepared["primary_prepare_tool"] = "auto_edit_manifest_select_prepare"
         prepared["deprecated_reason"] = (
-            "auto_edit_predictive no longer accepts same-call verification/export decisions. "
-            "Call auto_edit_predictive_prepare, inspect previews, then call verify_predictive_edit."
+            "auto_edit_predictive no longer accepts same-call verification/export decisions and remains only as the "
+            "deterministic fallback/debug path. Call auto_edit_manifest_select_prepare, inspect previews, then call "
+            "verify_predictive_edit."
         )
         if verification_feedback is not None:
             prepared["ignored_verification_feedback"] = True

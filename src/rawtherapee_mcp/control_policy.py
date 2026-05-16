@@ -329,3 +329,75 @@ def build_manifest_report() -> dict[str, Any]:
         "pending_evidence_controls": pending_evidence,
         "approved_curve_values": approved_values,
     }
+
+
+def build_agent_manifest_summary() -> dict[str, Any]:
+    """Build a compact agent-facing summary of autonomous-safe manifest controls."""
+    manifest = load_manifest()
+    controls = manifest.get("controls", {})
+    if not isinstance(controls, dict):
+        controls = {}
+
+    approved_curves = get_approved_curve_registry()
+    hidden_support_controls = {"Exposure.CurveMode", "Exposure.Curve2"}
+    entries: list[dict[str, Any]] = []
+
+    for control_id in sorted(controls):
+        entry = controls.get(control_id)
+        if not isinstance(entry, dict):
+            continue
+        if control_id in hidden_support_controls:
+            continue
+
+        policy = entry.get("autonomous_allowed")
+        if policy not in {True, "approved_curve_only", "approved_values_only"}:
+            continue
+
+        summary_entry: dict[str, Any] = {
+            "control_id": control_id,
+            "ui_name": str(entry.get("ui_name", control_id)),
+            "value_type": str(entry.get("value_type", "unknown")),
+            "expected_effect": str(entry.get("expected_effect", "")),
+            "risks": [str(risk) for risk in entry.get("risks", []) if isinstance(risk, str)],
+            "confidence": str(entry.get("confidence", "unknown")),
+            "pending_evidence": bool(entry.get("pending_evidence", False)),
+        }
+
+        if policy is True:
+            suggested_range = entry.get("suggested_autonomous_range")
+            summary_entry["allowed_range"] = suggested_range if isinstance(suggested_range, list) else None
+        else:
+            summary_entry["policy"] = str(policy)
+            approved_values: list[dict[str, Any]] = []
+            for curve in approved_curves.values():
+                fields = curve.get("pp3_fields")
+                if not isinstance(fields, dict) or control_id not in fields:
+                    continue
+                approved_values.append(
+                    {
+                        "id": str(curve.get("id", "")),
+                        "intended_effect": str(curve.get("intended_effect", "")),
+                        "risk_notes": [str(note) for note in curve.get("risk_notes", []) if isinstance(note, str)],
+                    }
+                )
+            summary_entry["approved_values"] = approved_values
+
+        entries.append(summary_entry)
+
+    return {
+        "planning_contract": {
+            "selection_rule": "Select only from the listed controls. Unknown or hidden controls are blocked.",
+            "vision_rule": (
+                "A safe but visually irrelevant edit is a failure. A conservative edit that does not execute the "
+                "user's vision is a failure."
+            ),
+            "quality_rule": (
+                "Avoiding artifacts is necessary but not sufficient. Use the manifest controls to serve the visual goal."
+            ),
+            "capability_rule": "If the available controls cannot execute the vision, say so explicitly.",
+            "pending_evidence_rule": (
+                "Controls marked pending_evidence=true are available but less proven and should be used conservatively."
+            ),
+        },
+        "controls": entries,
+    }

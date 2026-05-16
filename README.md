@@ -466,7 +466,7 @@ Example 4: Reject weak photos
 
 ### Advanced Tone and Color Controls
 
-Editorial candidates now use richer tone/color controls where RawTherapee PP3 supports them, not only exposure/warmth/saturation shifts.
+The manifest-select autonomous path now uses richer tone/color controls where RawTherapee PP3 supports them, not only exposure/warmth/saturation shifts.
 
 - Gentle/global tone curves and style-dependent curve shaping
 - Highlight rolloff controls and softer highlight handling

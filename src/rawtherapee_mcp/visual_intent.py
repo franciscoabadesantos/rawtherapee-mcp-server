@@ -73,7 +73,7 @@ _UNFILLED_CONTRACT_KEYS = (
 )
 _UNFILLED_CONTRACT_ERROR = (
     "This looks like an unfilled editing vision contract. Preview the image, fill emotional_goal, "
-    "visual_anchor, preserve, avoid, and editing_moves, then call auto_edit_predictive again."
+    "visual_anchor, preserve, avoid, and editing_moves, then call auto_edit_manifest_select_prepare."
 )
 _COLOR_DRIFT_AVOID_TERMS = (
     "orange/blue",
@@ -1017,11 +1017,10 @@ def build_vision_candidate_specs(
                     "create_composition_plan",
                     "generate_crop_candidates",
                     "preview_raw",
-                    "critique_gate",
-                    "adjust_profile",
+                    "verify_predictive_edit",
                 ]
                 if geometry_or_crop_suggested
-                else ["preview_raw", "critique_gate", "adjust_profile"]
+                else ["preview_raw", "verify_predictive_edit"]
             ),
         },
         {
@@ -1046,11 +1045,10 @@ def build_vision_candidate_specs(
                     "create_composition_plan",
                     "generate_crop_candidates",
                     "preview_raw",
-                    "critique_gate",
-                    "adjust_profile",
+                    "verify_predictive_edit",
                 ]
                 if geometry_or_crop_suggested
-                else ["preview_raw", "critique_gate", "adjust_profile"]
+                else ["preview_raw", "verify_predictive_edit"]
             ),
         },
         {
@@ -1075,11 +1073,10 @@ def build_vision_candidate_specs(
                     "create_composition_plan",
                     "generate_crop_candidates",
                     "preview_raw",
-                    "critique_gate",
-                    "adjust_profile",
+                    "verify_predictive_edit",
                 ]
                 if geometry_or_crop_suggested
-                else ["preview_raw", "critique_gate", "adjust_profile"]
+                else ["preview_raw", "verify_predictive_edit"]
             ),
         },
     ]

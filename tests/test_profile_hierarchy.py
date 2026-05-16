@@ -187,3 +187,31 @@ def test_list_templates_does_not_expose_generated_variants(custom_dir: Path, par
     custom_names = [t["name"] for t in result["custom"]]
     assert "generated_v" not in custom_names
     assert "event_base" in custom_names
+
+
+def test_list_templates_warns_on_case_insensitive_raw_stem_match(custom_dir: Path, parent_pp3: Path) -> None:
+    import asyncio
+
+    from rawtherapee_mcp.config import RTConfig
+    from rawtherapee_mcp.server import list_templates
+
+    (custom_dir / "img_1105_vivid_3d_local.pp3").write_text(parent_pp3.read_text(encoding="utf-8"), encoding="utf-8")
+
+    config = RTConfig(
+        rt_cli_path=None,
+        output_dir=custom_dir,
+        preview_dir=custom_dir,
+        custom_templates_dir=custom_dir,
+        preview_max_width=1200,
+        default_jpeg_quality=95,
+        haldclut_dir=None,
+        lcp_dir=None,
+        lensfun_dir=None,
+        allow_manual_unverified_export=False,
+    )
+    ctx = MagicMock()
+    ctx.lifespan_context = {"config": config}
+
+    result = asyncio.run(list_templates(ctx, current_file_path=str(custom_dir / "IMG_1105.CR3")))
+    assert "autonomous_workflow_warning" in result
+    assert "img_1105_vivid_3d_local" in result["matching_template_names"]

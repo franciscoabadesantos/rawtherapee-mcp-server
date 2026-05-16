@@ -40,6 +40,7 @@ from rawtherapee_mcp.server import (
     legacy_generate_vision_candidates,
     list_local_adjustments,
     list_raw_files,
+    list_templates,
     list_visual_editing_moves,
     mcp,
     preview_before_after,
@@ -48,6 +49,7 @@ from rawtherapee_mcp.server import (
     preview_white_balance,
     process_raw,
     read_exif,
+    read_profile,
     remove_local_adjustment,
     verify_predictive_edit,
     visual_moves_to_parameters,
@@ -252,6 +254,11 @@ class TestEditorialWorkflowTools:
         assert "error" not in result
         assert len(result["candidates"]) == 3
         assert result["legacy_status"] == "legacy_debug_manual_only"
+        assert result["legacy_manual_debug_only"] is True
+        assert result["not_for_autonomous_final_edits"] is True
+        assert result["recommended_primary_tool"] == "auto_edit_manifest_select_prepare"
+        assert result["required_final_tool"] == "verify_predictive_edit"
+        assert result["export_requires_verification_id"] is True
         assert result["verification_required_before_export"] is True
         assert result["recommended_next_tool"] == "verify_predictive_edit"
         for candidate in result["candidates"]:
@@ -320,6 +327,11 @@ class TestEditorialWorkflowTools:
         )
         assert "error" not in result
         assert result["legacy_status"] == "deprecated for autonomous default use"
+        assert result["legacy_manual_debug_only"] is True
+        assert result["not_for_autonomous_final_edits"] is True
+        assert result["recommended_primary_tool"] == "auto_edit_manifest_select_prepare"
+        assert result["required_final_tool"] == "verify_predictive_edit"
+        assert result["export_requires_verification_id"] is True
         assert result["verification_required_before_export"] is True
         assert result["recommended_next_tool"] == "verify_predictive_edit"
         assert len(result["candidates"]) == 3
@@ -371,6 +383,13 @@ class TestEditorialWorkflowTools:
         )
         assert "error" not in result
         assert result["legacy_tool"] is True
+        assert result["legacy_manual_debug_only"] is True
+        assert result["not_for_autonomous_final_edits"] is True
+        assert result["recommended_primary_tool"] == "auto_edit_manifest_select_prepare"
+        assert result["required_final_tool"] == "verify_predictive_edit"
+        assert result["export_requires_verification_id"] is True
+        assert result["verification_required_before_export"] is True
+        assert result["recommended_next_tool"] == "verify_predictive_edit"
         assert result["verification_required_before_export"] is True
         assert result["recommended_next_tool"] == "verify_predictive_edit"
 
@@ -943,6 +962,9 @@ class TestEditorialWorkflowTools:
         assert payload is not None
         assert payload["status"] == "verification_required"
         assert payload["decision"] == "verification_required"
+        assert payload["fallback_only"] is True
+        assert payload["recommended_primary_tool"] == "auto_edit_manifest_select_prepare"
+        assert payload["not_for_normal_autonomous_editing"] is True
         assert payload["base_preview_path"]
         assert payload["edited_preview_path"]
         assert len(result.content) >= 3
@@ -1726,6 +1748,11 @@ class TestAdjustProfile:
         )
         assert "error" not in result
         assert result["adjustments_applied"]["exposure"]["compensation"] == 1.5
+        assert result["legacy_manual_debug_only"] is True
+        assert result["not_for_autonomous_final_edits"] is True
+        assert result["recommended_primary_tool"] == "auto_edit_manifest_select_prepare"
+        assert result["required_final_tool"] == "verify_predictive_edit"
+        assert result["export_requires_verification_id"] is True
         assert result["verification_required_before_export"] is True
         assert result["recommended_next_tool"] == "verify_predictive_edit"
 
@@ -1765,6 +1792,21 @@ class TestAdjustProfile:
             {"exposure": {"compensation": 1.0}},
         )
         assert "error" in result
+
+    async def test_read_profile_warns_when_matching_current_file_stem(self, mock_ctx, tmp_path):
+        pp3_file = tmp_path / "img_1105_manifest_select.pp3"
+        pp3_file.write_text("[Version]\nAppVersion=5.11\nVersion=351\n")
+
+        result = await read_profile(
+            mock_ctx,
+            str(pp3_file),
+            current_file_path=str(tmp_path / "IMG_1105.CR3"),
+        )
+        assert result["recommended_primary_tool"] == "auto_edit_manifest_select_prepare"
+        assert result["required_final_tool"] == "verify_predictive_edit"
+        assert result["export_requires_verification_id"] is True
+        assert "autonomous_workflow_warning" in result
+        assert result["matching_template_names"] == ["img_1105_manifest_select"]
 
 
 class TestReadExifRecommendations:

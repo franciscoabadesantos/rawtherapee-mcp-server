@@ -550,8 +550,9 @@ def build_intent_inference_contract(
             "preview_raw",
             "create_editing_vision",
             "create_editorial_brief",
-            "auto_edit_predictive",
-            "legacy_generate_vision_candidates",
+            "get_compact_manifest_summary",
+            "auto_edit_manifest_select_prepare",
+            "verify_predictive_edit",
             "critique_gate",
         ],
     }
@@ -876,11 +877,14 @@ def build_candidate_descriptor(style_name: str) -> dict[str, Any]:
         "style_name": style_name,
         "intended_visual_effect": _CANDIDATE_EFFECTS.get(style_name, _CANDIDATE_EFFECTS["clean_editorial"]),
         "risks_to_check_in_preview": _CANDIDATE_RISKS.get(style_name, _CANDIDATE_RISKS["clean_editorial"]),
-        "suggested_next_tools": ["preview_raw", "critique_gate", "adjust_profile"],
+        "suggested_next_tools": ["preview_raw", "verify_predictive_edit"],
         "recommended_adjustment_strategy_if_it_fails": _CANDIDATE_FAIL_STRATEGIES.get(
             style_name,
             _CANDIDATE_FAIL_STRATEGIES["clean_editorial"],
         ),
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "required_final_tool": "verify_predictive_edit",
+        "export_requires_verification_id": True,
     }
 
 
@@ -1003,7 +1007,7 @@ def build_critique_gate(
             "If all candidates remain too close to the original, final outcome is "
             "proof_only or further refine, not export."
         ),
-        "If total score is below threshold, do not process final. Use adjust_profile or mark proof/reject.",
+        "If total score is below threshold, do not process final. Use auto_edit_manifest_select_prepare again or mark proof/reject.",
         "Do not praise the edit unless it clears threshold.",
         "Do not use words like stunning, perfect, or professional unless score supports it.",
         "If wrong_standard_warning is true, revise critique standard before final verdict.",

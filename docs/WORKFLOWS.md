@@ -39,9 +39,9 @@ You: "Looks good, process it"
 → Full-resolution JPEG saved to output directory
 ```
 
-## Iterative Editing with Visual Feedback
+## Manual Iterative Editing With Visual Feedback
 
-The visual feedback loop — the LLM sees each change and adjusts.
+This is a manual/debug profile-tweaking loop, not the default autonomous editing route.
 
 ```
 You: "Make this photo look cinematic"
@@ -83,9 +83,9 @@ You: "These are outdoor portraits, apply warm_portrait to all"
 → Processes all 45 files with progress tracking
 ```
 
-## Template Creation and Reuse
+## Manual Template Creation and Reuse
 
-Create a custom style and save it for future use.
+Create a custom style and save it for future use. This is template authoring for human reuse, not the primary autonomous editing workflow.
 
 ```
 You: "I want a faded film look with lifted blacks and muted colors"

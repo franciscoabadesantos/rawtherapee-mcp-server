@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rawtherapee_mcp.editorial import (
     build_critique_gate,
     build_curation_plan,
@@ -117,6 +119,16 @@ class TestBuildEditorialBrief:
             "crop or framing can improve hierarchy more than global tone/color" in instruction
             for instruction in brief["llm_instructions"]
         )
+
+    def test_public_autonomous_workflow_docs_prioritize_manifest_select(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        workflows_text = (repo_root / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
+        autonomous_section = workflows_text.split("## Default Autonomous Editing", 1)[1].split("## Basic RAW Processing", 1)[0]
+        assert "auto_edit_manifest_select_prepare" in autonomous_section
+        assert "verify_predictive_edit" in autonomous_section
+        assert "generate_editorial_candidates" not in autonomous_section
+        assert "generate_vision_candidates" not in autonomous_section
+        assert "adjust_profile" not in autonomous_section
 
 
 class TestEditorialCandidateParameters:
@@ -335,6 +347,8 @@ class TestBuildIntentInferenceContract:
         assert "sunset_silhouette" in contract["likely_intent_categories"]
         assert "studio_polished" in contract["likely_intent_categories"]
         assert "preview_raw" in contract["next_recommended_tools"]
+        assert "auto_edit_manifest_select_prepare" in contract["next_recommended_tools"]
+        assert "verify_predictive_edit" in contract["next_recommended_tools"]
 
 
 class TestBuildCurationPlan:

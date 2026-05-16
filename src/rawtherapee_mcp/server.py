@@ -173,6 +173,31 @@ def _profile_requires_verification(config: RTConfig, profile_path: Path) -> bool
     return any(resolved.is_relative_to(root) for root in guarded_roots)
 
 
+def _autonomous_workflow_warning() -> str:
+    return (
+        "Existing templates may be useful for human reference, but autonomous creative edits must still use "
+        "auto_edit_manifest_select_prepare and verify_predictive_edit before export."
+    )
+
+
+def _stem_match_token(current_file_path: str | None) -> str | None:
+    if not current_file_path:
+        return None
+    candidate = Path(current_file_path).stem.strip().lower()
+    return candidate or None
+
+
+def _matching_template_names(
+    template_names: list[str],
+    *,
+    current_file_path: str | None,
+) -> list[str]:
+    token = _stem_match_token(current_file_path)
+    if not token:
+        return []
+    return [name for name in template_names if token in name.lower()]
+
+
 def _write_verification_marker(
     config: RTConfig,
     *,
@@ -1245,6 +1270,11 @@ async def generate_editorial_candidates(
             "auto_edit_manifest_select_prepare + verify_predictive_edit for autonomous final decisions."
         ),
         "legacy_status": "legacy_debug_manual_only",
+        "legacy_manual_debug_only": True,
+        "not_for_autonomous_final_edits": True,
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "required_final_tool": "verify_predictive_edit",
+        "export_requires_verification_id": True,
         "verification_required_before_export": True,
         "recommended_next_tool": "verify_predictive_edit",
         "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
@@ -1347,6 +1377,11 @@ async def generate_vision_candidates(
             "Legacy/debug/manual-only path. Do not export directly from these candidates. "
             "Use auto_edit_manifest_select_prepare + verify_predictive_edit for autonomous final edits."
         ),
+        "legacy_manual_debug_only": True,
+        "not_for_autonomous_final_edits": True,
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "required_final_tool": "verify_predictive_edit",
+        "export_requires_verification_id": True,
         "verification_required_before_export": True,
         "recommended_next_tool": "verify_predictive_edit",
         "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
@@ -1378,6 +1413,11 @@ async def legacy_generate_vision_candidates(
     )
     if "error" not in result:
         result["legacy_tool"] = True
+        result["legacy_manual_debug_only"] = True
+        result["not_for_autonomous_final_edits"] = True
+        result["recommended_primary_tool"] = "auto_edit_manifest_select_prepare"
+        result["required_final_tool"] = "verify_predictive_edit"
+        result["export_requires_verification_id"] = True
         result["verification_required_before_export"] = True
         result["recommended_next_tool"] = "verify_predictive_edit"
         result["recommended_prepare_tool"] = "auto_edit_manifest_select_prepare"
@@ -1953,6 +1993,9 @@ async def _prepare_predictive_packet(
         "decision": "verification_required",
         "decision_source": "auto_edit_predictive_prepare",
         "prepare_mode": "deterministic_routing_fallback",
+        "fallback_only": True,
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "not_for_normal_autonomous_editing": True,
         "raw_path": str(source_raw),
         "profile_path": str(profile_path),
         "base_preview_path": base_preview_result.get("preview_path"),
@@ -2003,6 +2046,10 @@ async def auto_edit_predictive_prepare(
         preview_width=preview_width,
         diagnosis_override=diagnosis_override,
     )
+    if isinstance(prepared, dict):
+        prepared.setdefault("fallback_only", True)
+        prepared.setdefault("recommended_primary_tool", "auto_edit_manifest_select_prepare")
+        prepared.setdefault("not_for_normal_autonomous_editing", True)
     if prepared.get("status") != "verification_required":
         return prepared
     return await _tool_result_with_preview_images(
@@ -2546,11 +2593,17 @@ async def preview_raw(
 
 
 @mcp.tool()
-async def list_templates(ctx: Context) -> dict[str, Any]:
+async def list_templates(
+    ctx: Context,
+    current_file_path: str | None = None,
+) -> dict[str, Any]:
     """List all available PP3 processing templates (built-in and custom).
 
     Use this to discover which templates are available for apply_template
-    or as a base_template for generate_pp3_profile.
+    or as a base_template for generate_pp3_profile. When current_file_path is
+    provided, template names are checked against the RAW stem case-insensitively
+    (e.g. IMG_1105.CR3 matches img_1105_manifest_select). Matching templates are
+    treated as human-reference assets, not autonomous default paths.
     Returns: dict with built_in and custom template lists.
     """
     config = get_config(ctx)
@@ -2564,7 +2617,26 @@ async def list_templates(ctx: Context) -> dict[str, Any]:
     for pp3_file in sorted(config.custom_templates_dir.glob("*.pp3")):
         custom.append({"name": pp3_file.stem, "source": "custom", "path": str(pp3_file)})
 
-    return {"built_in": built_in, "custom": custom, "total": len(built_in) + len(custom)}
+    matching = _matching_template_names(
+        [item["name"] for item in [*built_in, *custom]],
+        current_file_path=current_file_path,
+    )
+    result = {
+        "built_in": built_in,
+        "custom": custom,
+        "total": len(built_in) + len(custom),
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "required_final_tool": "verify_predictive_edit",
+        "export_requires_verification_id": True,
+    }
+    if matching:
+        result["autonomous_workflow_warning"] = _autonomous_workflow_warning()
+        result["matching_template_names"] = matching
+        result["match_basis"] = {
+            "current_file_path": current_file_path,
+            "matched_raw_stem_case_insensitive": _stem_match_token(current_file_path),
+        }
+    return result
 
 
 @mcp.tool()
@@ -2731,6 +2803,11 @@ async def adjust_profile(
         "adjustments_applied": adjustments,
         "summary": profile.to_dict(),
         "legacy_status": "manual_debug_only",
+        "legacy_manual_debug_only": True,
+        "not_for_autonomous_final_edits": True,
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "required_final_tool": "verify_predictive_edit",
+        "export_requires_verification_id": True,
         "verification_required_before_export": True,
         "recommended_next_tool": "verify_predictive_edit",
         "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
@@ -2738,12 +2815,17 @@ async def adjust_profile(
 
 
 @mcp.tool()
-async def read_profile(ctx: Context, profile_path: str) -> dict[str, Any]:
+async def read_profile(
+    ctx: Context,
+    profile_path: str,
+    current_file_path: str | None = None,
+) -> dict[str, Any]:
     """Display contents of a PP3 profile in human-readable format.
 
     Use this to inspect what settings a profile contains before applying it.
+    Existing profiles are reference/debug inputs, not autonomous final-edit paths.
     Returns all active sections and their key-value pairs.
-    Params: profile_path
+    Params: profile_path, current_file_path
     """
     pp3_path = Path(profile_path)
     if not pp3_path.is_file():
@@ -2752,11 +2834,23 @@ async def read_profile(ctx: Context, profile_path: str) -> dict[str, Any]:
     profile = PP3Profile()
     profile.load(pp3_path)
 
-    return {
+    result = {
         "profile_path": str(pp3_path),
         "sections": profile.to_dict(),
         "section_count": len(profile.sections()),
+        "recommended_primary_tool": "auto_edit_manifest_select_prepare",
+        "required_final_tool": "verify_predictive_edit",
+        "export_requires_verification_id": True,
     }
+    matching = _matching_template_names([pp3_path.stem], current_file_path=current_file_path)
+    if matching:
+        result["autonomous_workflow_warning"] = _autonomous_workflow_warning()
+        result["matching_template_names"] = matching
+        result["match_basis"] = {
+            "current_file_path": current_file_path,
+            "matched_raw_stem_case_insensitive": _stem_match_token(current_file_path),
+        }
+    return result
 
 
 @mcp.tool()
@@ -2896,11 +2990,14 @@ async def create_template_from_description(
         "template_path": str(output_path),
         "description": description,
         "reference_image_path": reference_image_path,
-        "note": "Template created with neutral settings. Use adjust_profile to refine parameters.",
+        "note": (
+            "Template created with neutral settings. This is manual template authoring, not the autonomous "
+            "creative edit path."
+        ),
         "recommended_workflow": [
-            "1. Use adjust_profile() to set processing parameters based on the description",
-            "2. Use preview_raw() to verify the result visually",
-            "3. Use save_template() to save the finalized profile",
+            "1. For autonomous creative edits, use auto_edit_manifest_select_prepare + verify_predictive_edit",
+            "2. For manual template authoring, adjust the profile and preview it visually",
+            "3. Use save_template() only after the manual template is finalized",
         ],
         "summary": profile.to_dict(),
     }

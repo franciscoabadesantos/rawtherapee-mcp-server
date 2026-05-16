@@ -392,13 +392,13 @@ For pip + venv config examples for all clients, see [docs/CLIENT_COMPATIBILITY.m
 After installation and client configuration, try this workflow:
 
 1. **"Analyze this photo"** — `analyze_image` reads EXIF, computes histogram, generates a thumbnail, and returns processing recommendations
-2. **"Make it warmer with more contrast"** — `generate_pp3_profile` creates a profile with warm white balance and contrast boost, `preview_before_after` shows the difference
-3. **"The shadows are too dark"** — `add_luminance_adjustment` adds a shadow recovery spot, `preview_with_adjustments` shows the result
-4. **"Export for my phone"** — `process_raw` with `device_preset` crops and processes at the right aspect ratio
+2. **"Turn this into a warmer, more contrasty edit"** — `create_editing_vision`, `get_compact_manifest_summary`, and `auto_edit_manifest_select_prepare` produce verified preview-ready edits
+3. **"Score the rendered result before export"** — `verify_predictive_edit` records descriptive observations, numeric scores, and the final export gate decision
+4. **"Export the approved version"** — `process_raw` uses the verifier-issued `verification_id`
 
 ## Opinionated Editorial Workflow
 
-These tools now define the default autonomous editing route. Low-level tools like `adjust_profile` and direct `process_raw` remain available for manual/debug work, but they are no longer the recommended autonomous final-edit path.
+These tools define the normal autonomous editing route. Manual/debug profile-construction tools are hidden from the normal MCP surface and are not part of the default autonomous path.
 
 - The server still relies on the MCP client/LLM to inspect inline previews visually.
 - The tools provide scoring structure and discipline; they do not claim to see the image by themselves.
@@ -575,7 +575,7 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `list_raw_files` | Scan a directory for supported RAW files |
 | `list_output_files` | List processed output files in the output directory |
 
-### Opinionated Editorial Workflow (8)
+### Opinionated Editorial Workflow (6)
 
 | Tool | Description |
 |------|-------------|
@@ -583,8 +583,6 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `create_editing_vision` | Build a structured visual-intention contract before manifest-select planning |
 | `list_visual_editing_moves` | List the compact palette of safe, high-level artistic editing moves |
 | `create_editorial_brief` | Build a strict editorial brief with critique/reject/export rules |
-| `generate_editorial_candidates` | Legacy/debug/manual-only candidate generator; not for autonomous final edits |
-| `generate_vision_candidates` | Legacy/debug/manual-only candidate generator from editing vision |
 | `critique_gate` | Return the scoring rubric and strict pass/fail contract after preview inspection |
 | `create_curation_plan` | Plan batch curation into reject/proof_only/edit_candidate/strong_keeper before editing |
 
@@ -598,30 +596,24 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `get_image_info` | Get dimensions, format, file size with optional inline thumbnail |
 | `get_histogram` | RGB histogram with per-channel statistics, clipping, and SVG visualization |
 
-### Profile Management (8)
+### Profile Management (4)
 
 | Tool | Description |
 |------|-------------|
-| `generate_pp3_profile` | Create a PP3 profile from base template + parameters + device preset |
 | `read_profile` | Display PP3 profile contents in human-readable format |
-| `adjust_profile` | Manual/debug profile tweaking; not a normal autonomous final-edit path |
 | `compare_profiles` | Diff two profiles with optional visual A/B comparison |
 | `save_template` | Save a profile as a reusable custom template |
-| `create_template_from_description` | Create a template stub from natural language description |
 | `delete_template` | Delete a custom template |
-| `interpolate_profiles` | Blend two profiles by linear interpolation |
 
-### Preview & Visualization (7)
+### Preview & Visualization (5)
 
 | Tool | Description |
 |------|-------------|
 | `preview_raw` | Quick preview JPEG with optional inline image return |
-| `preview_before_after` | Side-by-side neutral vs. profile comparison |
 | `preview_exposure_bracket` | Multiple EV stops rendered for exposure comparison |
 | `preview_white_balance` | Multiple WB presets with Kelvin values |
 | `batch_preview` | Thumbnails for multiple RAW files |
 | `preview_luminance_mask` | Grayscale mask showing local adjustment coverage |
-| `preview_with_adjustments` | Preview with all Locallab spots active |
 
 ### Processing & Export (4)
 
@@ -640,7 +632,7 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `add_device_preset_tool` | Create a custom device preset |
 | `delete_device_preset` | Delete a custom device preset |
 
-### Local Adjustments (5)
+### Local Adjustments (4)
 
 | Tool | Description |
 |------|-------------|
@@ -648,7 +640,6 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `list_local_adjustments` | List all Locallab spots in a profile |
 | `adjust_local_spot` | Modify an existing Locallab spot |
 | `remove_local_adjustment` | Remove a Locallab spot |
-| `apply_local_preset` | Apply a predefined local adjustment preset with intensity scaling |
 
 ### Lens Correction (2)
 
@@ -666,13 +657,14 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 | `preview_lut` | Render an inline preview of a RAW file with a film simulation applied |
 | `preview_lut_comparison` | Render 2–5 LUT previews side-by-side for quick comparison |
 
-### Profile Inheritance (3)
+### Profile Inheritance (2)
 
 | Tool | Description |
 |------|-------------|
-| `create_profile_variant` | Derive a child PP3 from a parent template with section-level overrides |
 | `list_profile_variants` | List all variants with override summaries, optionally filtered by parent |
 | `update_base_profile` | Modify a base template and propagate changes to all child variants |
+
+Manual/debug profile-authoring tools still exist for explicit debug-mode use, but they are not exposed in the normal autonomous MCP surface.
 
 ### Metadata Privacy (3)
 

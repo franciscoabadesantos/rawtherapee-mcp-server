@@ -21,27 +21,30 @@ Generated or adjusted profiles should not go straight to `process_raw` without a
 
 ## Basic RAW Processing
 
-The simplest workflow: analyze, create a profile, preview, process.
+The simplest autonomous workflow: analyze, prepare through manifest-select, verify, process.
 
 ```
 You: "Analyze IMG_1234.CR2"
 → analyze_image returns EXIF, histogram, thumbnail, and recommendations
 
 You: "Create a warm portrait look"
-→ generate_pp3_profile(name="warm_edit", base_template="warm_portrait")
+→ create_editing_vision(...)
+→ get_compact_manifest_summary()
+→ auto_edit_manifest_select_prepare(...)
+→ Returns base preview, edited preview, and before/after composite
 
-You: "Show me a preview"
-→ preview_raw(file_path="IMG_1234.CR2", profile_path="warm_edit.pp3")
-→ Returns inline image for visual inspection
+You: "Verify the rendered result"
+→ verify_predictive_edit(...)
+→ Returns final decision plus verification_id only if export passes
 
-You: "Looks good, process it"
-→ process_raw(file_path="IMG_1234.CR2", profile_path="warm_edit.pp3")
+You: "Process the approved version"
+→ process_raw(file_path="IMG_1234.CR2", profile_path="...", verification_id="...")
 → Full-resolution JPEG saved to output directory
 ```
 
 ## Manual Iterative Editing With Visual Feedback
 
-This is a manual/debug profile-tweaking loop, not the default autonomous editing route.
+This is a debug/manual profile-tweaking loop, not the normal autonomous editing route. These tools are hidden in normal MCP mode.
 
 ```
 You: "Make this photo look cinematic"
@@ -85,7 +88,7 @@ You: "These are outdoor portraits, apply warm_portrait to all"
 
 ## Manual Template Creation and Reuse
 
-Create a custom style and save it for future use. This is template authoring for human reuse, not the primary autonomous editing workflow.
+Create a custom style and save it for future use. This is template authoring for human reuse, not the primary autonomous editing workflow, and the profile-authoring tools are hidden in normal MCP mode.
 
 ```
 You: "I want a faded film look with lifted blacks and muted colors"

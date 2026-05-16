@@ -195,8 +195,29 @@ class TestManifestSelectPrepare:
         assert payload["prepare_mode"] == "manifest_select"
         assert payload["base_preview_path"]
         assert payload["edited_preview_path"]
+        assert payload["profile_provenance_path"]
+        assert Path(payload["profile_provenance_path"]).is_file()
         assert len(result.content) >= 3
         assert result.content[1].type == "image"
+
+    async def test_prepare_writes_provenance_sidecar_with_expected_path_convention(self, mock_ctx, tmp_path: Path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_edit_plan())
+        payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        provenance_path = Path(payload["profile_path"] + ".provenance.json")
+        assert payload["profile_provenance_path"] == str(provenance_path)
+        assert provenance_path.is_file()
+        assert payload["profile_provenance"]["generated_by"] == "auto_edit_manifest_select_prepare"
+        assert payload["profile_provenance"]["workflow"] == "manifest_select"
 
     async def test_verify_remains_only_final_decision_step(self, mock_ctx, tmp_path: Path):
         raw_file = tmp_path / "photo.cr3"
@@ -246,6 +267,59 @@ class TestManifestSelectPrepare:
         payload = result.structured_content if isinstance(result, ToolResult) else result
         assert payload["decision_source"] == "verify_predictive_edit"
         assert payload["decision"] in {"proof_plus", "export"}
+
+    async def test_provenance_survives_runtime_state_loss(self, mock_ctx, tmp_path: Path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_edit_plan())
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        marker_dir = mock_ctx.lifespan_context["config"].preview_dir / "_verification_markers"
+        if marker_dir.exists():
+            for marker in marker_dir.glob("*.json"):
+                marker.unlink()
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            before_after_path=prepare_payload["before_after_path"],
+            verification_observations={
+                "subject_change_description": "Subject reads better.",
+                "background_change_description": "Background is calmer.",
+                "midtone_change_description": "Midtones improve.",
+                "highlight_shadow_description": "Highlights remain believable.",
+                "color_change_description": "Color improves naturally.",
+                "artifact_description": "No obvious artifacts.",
+                "crop_dependency_description": "Mostly tonal and not crop-driven.",
+                "scores": {
+                    "global_pixel_difference": 7.4,
+                    "subject_separation_improvement": 7.3,
+                    "non_crop_tonal_improvement": 7.2,
+                    "color_intent_improvement": 7.1,
+                    "highlight_shadow_quality": 6.9,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "artifact_check": "pass",
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                },
+            },
+            export=False,
+        )
+        payload = result.structured_content if isinstance(result, ToolResult) else result
+        assert payload["decision_source"] == "verify_predictive_edit"
+        assert payload["profile_provenance"]["generated_by"] == "auto_edit_manifest_select_prepare"
 
     async def test_deterministic_routing_remains_fallback_debug_only(self, mock_ctx, tmp_path: Path):
         raw_file = tmp_path / "photo.cr3"

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastmcp.exceptions import NotFoundError
 from fastmcp.tools import ToolResult
 from PIL import Image as PILImage
 
@@ -18,6 +19,7 @@ from rawtherapee_mcp.server import (
     adjust_profile,
     analyze_image,
     apply_local_preset,
+    auto_edit_manifest_select_prepare,
     auto_edit_predictive,
     auto_edit_predictive_prepare,
     batch_analyze,
@@ -54,6 +56,57 @@ from rawtherapee_mcp.server import (
     verify_predictive_edit,
     visual_moves_to_parameters,
 )
+
+
+def _valid_manifest_edit_plan() -> dict[str, object]:
+    return {
+        "image_observation": {
+            "main_subject": "subject",
+            "supporting_elements": ["background"],
+            "distractions": ["none"],
+            "tonal_state": "slightly flat",
+            "color_state": "muted",
+            "highlight_shadow_state": "safe",
+            "composition_state": "already strong",
+        },
+        "vision_interpretation": {
+            "user_goal": "make the subject read faster",
+            "desired_viewer_first_read": "subject first",
+            "desired_mood": "natural but stronger",
+            "must_preserve": ["realistic daylight"],
+            "must_avoid": ["fake HDR"],
+        },
+        "control_selections": [
+            {
+                "control_id": "Exposure.Curve",
+                "approved_value_id": "tone_curve.midtone_depth_v1",
+                "reason": "approved depth curve",
+                "expected_effect": "stronger separation",
+                "risk": "hard sky",
+                "risk_mitigation": "keep the rest moderate",
+            },
+            {
+                "control_id": "Exposure.Compensation",
+                "value": 0.2,
+                "reason": "small lift",
+                "expected_effect": "slightly brighter subject",
+                "risk": "flat highlights",
+                "risk_mitigation": "stay modest",
+            },
+            {
+                "control_id": "Vibrance.Enabled",
+                "value": True,
+                "reason": "enable vibrance",
+                "expected_effect": "color support",
+                "risk": "oversaturation",
+                "risk_mitigation": "keep values low",
+            },
+        ],
+        "controls_considered_but_rejected": [
+            {"control_id": "Local Contrast.Amount", "reason": "blocked by manifest"},
+        ],
+        "non_goals": ["do not create fake HDR"],
+    }
 
 
 class TestGetConfig:
@@ -221,12 +274,34 @@ class TestEditorialWorkflowTools:
         tools = await mcp.list_tools()
         names = {tool.name for tool in tools}
         assert "visual_moves_to_parameters" in names
-        assert "auto_edit_predictive" in names
         assert "auto_edit_manifest_select_prepare" in names
         assert "verify_predictive_edit" in names
-        assert "legacy_generate_vision_candidates" in names
         assert "create_composition_plan" in names
         assert "generate_crop_candidates" in names
+        assert "auto_edit_predictive" not in names
+        assert "legacy_generate_vision_candidates" not in names
+        assert "generate_pp3_profile" not in names
+        assert "adjust_profile" not in names
+
+    async def test_debug_manual_tools_are_hidden_in_normal_mode(self):
+        tools = await mcp.list_tools()
+        names = {tool.name for tool in tools}
+        assert "generate_editorial_candidates" not in names
+        assert "generate_vision_candidates" not in names
+        assert "preview_before_after" not in names
+
+    async def test_debug_manual_tools_are_visible_only_when_debug_mode_enabled(self):
+        with patch.dict("os.environ", {"RT_ENABLE_DEBUG_MANUAL_TOOLS": "true"}, clear=False):
+            tools = await mcp.list_tools()
+        names = {tool.name for tool in tools}
+        assert "generate_editorial_candidates" in names
+        assert "generate_vision_candidates" in names
+        assert "generate_pp3_profile" in names
+        assert "adjust_profile" in names
+
+    async def test_hidden_manual_tool_call_is_rejected_in_normal_mode(self):
+        with pytest.raises(NotFoundError):
+            await mcp.call_tool("generate_pp3_profile", {"name": "test"})
 
     async def test_visual_moves_to_parameters_tool_returns_sanitized_payload(self, mock_ctx):
         result = await visual_moves_to_parameters(
@@ -993,7 +1068,7 @@ class TestEditorialWorkflowTools:
             return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
 
         with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
-            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
         payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
 
         result = await verify_predictive_edit(
@@ -1018,7 +1093,7 @@ class TestEditorialWorkflowTools:
             return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
 
         with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
-            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
         prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
 
         verification_observations = {
@@ -1063,6 +1138,87 @@ class TestEditorialWorkflowTools:
         assert result.content[1].type == "image"
         assert result.content[2].type == "image"
 
+    async def test_verify_predictive_edit_rejects_profiles_without_manifest_select_provenance(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+        profile_path = tmp_path / "manual.pp3"
+        profile_path.write_text("[Version]\nAppVersion=5.11\n")
+        base_preview = tmp_path / "base.jpg"
+        edited_preview = tmp_path / "edited.jpg"
+        PILImage.new("RGB", (800, 600), "gray").save(base_preview, "JPEG")
+        PILImage.new("RGB", (800, 600), "blue").save(edited_preview, "JPEG")
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=str(profile_path),
+            base_preview_path=str(base_preview),
+            edited_preview_path=str(edited_preview),
+            verification_observations={
+                "subject_change_description": "Subject reads more clearly.",
+                "background_change_description": "Background is calmer.",
+                "midtone_change_description": "Midtones improve.",
+                "highlight_shadow_description": "Highlights remain believable.",
+                "color_change_description": "Color improves naturally.",
+                "artifact_description": "No obvious artifacts.",
+                "crop_dependency_description": "Mostly tonal and not crop-driven.",
+                "scores": {
+                    "subject_separation_improvement": 7.2,
+                    "non_crop_tonal_improvement": 7.2,
+                    "color_intent_improvement": 7.1,
+                    "highlight_shadow_quality": 7.0,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "artifact_check": "pass",
+                    "naturalness_score": 8.0,
+                    "artifact_free_score": 9.0,
+                },
+            },
+        )
+        assert result["error"] == "invalid_profile_provenance"
+        assert result["required_workflow"] == [
+            "auto_edit_manifest_select_prepare",
+            "verify_predictive_edit",
+            "process_raw with verification_id",
+        ]
+
+    async def test_verify_predictive_edit_requires_numeric_score_fields(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            verification_observations={
+                "subject_change_description": "Subject reads more clearly.",
+                "background_change_description": "Background is calmer.",
+                "midtone_change_description": "Midtones improve.",
+                "highlight_shadow_description": "Highlights remain believable.",
+                "color_change_description": "Color improves naturally.",
+                "artifact_description": "No obvious artifacts.",
+                "crop_dependency_description": "Mostly tonal and not crop-driven.",
+                "scores": {
+                    "subject_separation_improvement": 7.2,
+                    "non_crop_tonal_improvement": 7.2,
+                },
+            },
+        )
+        assert result["error"] == "verification_scores_required"
+        assert "color_intent_improvement" in result["missing_score_fields"]
+
     async def test_verify_predictive_edit_emits_consistency_warnings(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr3"
         raw_file.write_bytes(b"raw")
@@ -1073,7 +1229,7 @@ class TestEditorialWorkflowTools:
             return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
 
         with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
-            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
         prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
 
         result = await verify_predictive_edit(
@@ -1110,6 +1266,51 @@ class TestEditorialWorkflowTools:
         assert warnings
         assert any(item["field"] in {"artifact_free_score", "artifact_check"} for item in warnings)
 
+    async def test_verify_predictive_edit_does_not_warn_on_negated_artifact_language(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr3"
+        raw_file.write_bytes(b"raw")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (900, 600), "gray").save(str(out), "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
+
+        result = await verify_predictive_edit(
+            mock_ctx,
+            raw_path=str(raw_file),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            verification_observations={
+                "subject_change_description": "Subject is clearer.",
+                "background_change_description": "Background shows no halos and no clipping.",
+                "midtone_change_description": "Midtones are not crunchy.",
+                "highlight_shadow_description": "Highlights are controlled without banding.",
+                "color_change_description": "There is no obvious cyan cast.",
+                "artifact_description": "No visible lifted blacks and without fake HDR.",
+                "crop_dependency_description": "Mostly tonal changes.",
+                "scores": {
+                    "subject_separation_improvement": 8.0,
+                    "non_crop_tonal_improvement": 8.0,
+                    "color_intent_improvement": 8.0,
+                    "highlight_shadow_quality": 8.5,
+                    "composition_improvement": 4.0,
+                    "crop_contribution": 2.0,
+                    "perceived_non_crop_improvement": "moderate",
+                    "artifact_check": "pass",
+                    "naturalness_score": 8.4,
+                    "artifact_free_score": 9.0,
+                },
+            },
+            export=False,
+        )
+        payload = result.structured_content if isinstance(result, ToolResult) else result
+        assert payload["consistency_checks"]["warnings"] == []
+
     async def test_verify_predictive_edit_blocks_proof_plus_when_perceived_non_crop_is_weak(
         self, mock_ctx, tmp_path
     ):
@@ -1122,7 +1323,7 @@ class TestEditorialWorkflowTools:
             return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
 
         with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
-            prepared = await auto_edit_predictive_prepare(mock_ctx, str(raw_file))
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
         prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
 
         result = await verify_predictive_edit(
@@ -1520,19 +1721,23 @@ class TestProcessRaw:
     async def test_verified_export_succeeds_for_generated_profile(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
-        profile_path = mock_ctx.lifespan_context["config"].custom_templates_dir / "generated.pp3"
-        profile_path.write_text("[Version]\nAppVersion=5.11\n")
-        base_preview = tmp_path / "base.jpg"
-        edited_preview = tmp_path / "edited.jpg"
-        PILImage.new("RGB", (800, 600), "gray").save(base_preview, "JPEG")
-        PILImage.new("RGB", (800, 600), "blue").save(edited_preview, "JPEG")
+
+        async def create_preview(**kwargs):
+            out = kwargs["output_path"]
+            PILImage.new("RGB", (800, 600), "gray").save(out, "JPEG")
+            return {"success": True, "output_path": str(out), "processing_time": 0.3, "file_size": out.stat().st_size}
+
+        with patch("rawtherapee_mcp.server.run_rt_cli", side_effect=create_preview):
+            prepared = await auto_edit_manifest_select_prepare(mock_ctx, str(raw_file), _valid_manifest_edit_plan())
+        prepare_payload = prepared.structured_content if isinstance(prepared, ToolResult) else prepared
 
         verify_result = await verify_predictive_edit(
             mock_ctx,
             raw_path=str(raw_file),
-            profile_path=str(profile_path),
-            base_preview_path=str(base_preview),
-            edited_preview_path=str(edited_preview),
+            profile_path=prepare_payload["profile_path"],
+            base_preview_path=prepare_payload["base_preview_path"],
+            edited_preview_path=prepare_payload["edited_preview_path"],
+            before_after_path=prepare_payload["before_after_path"],
             verification_observations={
                 "subject_change_description": "Subject reads more clearly.",
                 "background_change_description": "Background is slightly calmer.",
@@ -1567,7 +1772,7 @@ class TestProcessRaw:
             process_result = await process_raw(
                 mock_ctx,
                 str(raw_file),
-                str(profile_path),
+                prepare_payload["profile_path"],
                 include_preview=False,
                 verification_id=verify_payload["verification_id"],
             )

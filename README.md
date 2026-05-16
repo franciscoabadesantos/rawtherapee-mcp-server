@@ -627,7 +627,7 @@ Check [GitHub Releases](https://github.com/lucamarien/rawtherapee-mcp-server/rel
 
 | Tool | Description |
 |------|-------------|
-| `process_raw` | Process a RAW file to JPEG/TIFF/PNG; generated/edit profiles require verification or explicit manual override |
+| `process_raw` | Process a RAW file to JPEG/TIFF/PNG; generated/edit profiles require verification before export |
 | `apply_template` | Apply a template to process a RAW file with optional device preset |
 | `batch_process` | Process multiple RAW files with the same profile |
 | `export_multi_device` | Export one RAW optimized for multiple devices in one call |

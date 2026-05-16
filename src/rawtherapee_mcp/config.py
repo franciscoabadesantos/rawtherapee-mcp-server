@@ -44,6 +44,11 @@ class RTConfig:
     haldclut_dir: Path | None
     lcp_dir: Path | None
     lensfun_dir: Path | None
+    allow_manual_unverified_export: bool
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def find_lensfun_dir(rt_cli_path: Path | None) -> Path | None:
@@ -251,6 +256,7 @@ def load_config() -> RTConfig:
     # Ensure output directories exist
     output_dir.mkdir(parents=True, exist_ok=True)
     custom_templates_dir.mkdir(parents=True, exist_ok=True)
+    allow_manual_unverified_export = _parse_bool(os.environ.get("RT_ALLOW_MANUAL_UNVERIFIED_EXPORT", "false"))
 
     # Resolve all paths to canonical form (avoids 8.3 short names on Windows)
     return RTConfig(
@@ -263,4 +269,5 @@ def load_config() -> RTConfig:
         haldclut_dir=haldclut_dir.resolve() if haldclut_dir else None,
         lcp_dir=lcp_dir.resolve() if lcp_dir else None,
         lensfun_dir=lensfun_dir.resolve() if lensfun_dir else None,
+        allow_manual_unverified_export=allow_manual_unverified_export,
     )

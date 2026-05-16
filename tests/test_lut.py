@@ -55,6 +55,7 @@ def test_list_luts_groups_by_subdir(lut_dir: Path) -> None:
         haldclut_dir=lut_dir,
         lcp_dir=None,
         lensfun_dir=None,
+        allow_manual_unverified_export=False,
     )
     ctx = MagicMock()
     ctx.lifespan_context = {"config": config}
@@ -86,6 +87,7 @@ def test_list_luts_category_filter(lut_dir: Path) -> None:
         haldclut_dir=lut_dir,
         lcp_dir=None,
         lensfun_dir=None,
+        allow_manual_unverified_export=False,
     )
     ctx = MagicMock()
     ctx.lifespan_context = {"config": config}

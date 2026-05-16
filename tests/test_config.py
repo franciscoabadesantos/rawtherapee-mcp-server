@@ -58,6 +58,13 @@ class TestLoadConfig:
                 assert config.rt_cli_path is None
                 assert config.preview_max_width == 1200
                 assert config.default_jpeg_quality == 95
+                assert config.allow_manual_unverified_export is False
+
+    def test_manual_unverified_export_flag_true(self, tmp_dirs):
+        with patch.dict("os.environ", {"RT_ALLOW_MANUAL_UNVERIFIED_EXPORT": "true"}, clear=True):
+            with patch("rawtherapee_mcp.config.find_rt_cli", return_value=None):
+                config = load_config()
+                assert config.allow_manual_unverified_export is True
 
     def test_invalid_jpeg_quality(self, env_vars):
         with patch.dict("os.environ", {"RT_JPEG_QUALITY": "200"}):

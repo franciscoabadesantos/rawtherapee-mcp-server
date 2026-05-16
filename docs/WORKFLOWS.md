@@ -17,7 +17,7 @@ preview_raw
 → process_raw only when verify returns decision="export" and export_gate_passed=true
 ```
 
-Generated or adjusted profiles should not go straight to `process_raw` without a verifier-issued `verification_id`, unless a human explicitly chooses `manual_override_unverified_export=true`.
+Generated or adjusted profiles should not go straight to `process_raw` without a verifier-issued `verification_id`.
 
 ## Basic RAW Processing
 

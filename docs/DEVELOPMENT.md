@@ -163,6 +163,15 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full guide. Summary:
 6. Add tests in `test_server.py` with mocked dependencies
 7. Run `make validate`
 
+## Debug-Only Export Override
+
+The server contains a debug-only bypass for unverified export attempts. This is not part of the normal autonomous workflow and must not appear in user-facing workflow guides.
+
+- Server flag: `RT_ALLOW_MANUAL_UNVERIFIED_EXPORT=true`
+- Purpose: local debugging or human-supervised investigation of export-gate behavior
+- Default: disabled
+- Public guidance: do not mention this bypass in `README.md`, `docs/WORKFLOWS.md`, or normal autonomous workflow examples
+
 ## MCP Inspector
 
 Test the server interactively without a full MCP client:

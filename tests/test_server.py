@@ -1135,6 +1135,13 @@ class TestEditorialWorkflowTools:
         payload = result.structured_content if isinstance(result, ToolResult) else result
         assert payload["decision"] == "proof_only"
         assert payload["export_gate_passed"] is False
+        assert payload["gate_message"]
+        assert "not override" in payload["gate_message"].lower()
+        assert payload["required_workflow"] == [
+            "auto_edit_manifest_select_prepare",
+            "verify_predictive_edit",
+            "process_raw with verification_id",
+        ]
 
     async def test_generate_crop_candidates_returns_safe_crop_only_profiles(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
@@ -1483,6 +1490,10 @@ class TestProcessRaw:
         assert result["error"] == "verification_required_before_export"
         assert result["recommended_prepare_tool"] == "auto_edit_manifest_select_prepare"
         assert result["recommended_verify_tool"] == "verify_predictive_edit"
+        assert "not a suggestion" in result["gate_message"].lower()
+        assert "close to" not in result["gate_message"].lower()
+        assert "acceptable" not in result["gate_message"].lower()
+        assert "override-worthy" not in result["gate_message"].lower()
 
     async def test_verified_export_succeeds_for_generated_profile(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
@@ -1541,11 +1552,36 @@ class TestProcessRaw:
         assert process_result["success"] is True
         assert process_result["verification_id"] == verify_payload["verification_id"]
 
-    async def test_manual_override_allows_unverified_generated_profile_export(self, mock_ctx, tmp_path):
+    async def test_manual_override_rejected_when_not_enabled(self, mock_ctx, tmp_path):
         raw_file = tmp_path / "photo.cr2"
         raw_file.write_bytes(b"raw")
         pp3_file = mock_ctx.lifespan_context["config"].custom_templates_dir / "generated.pp3"
         pp3_file.write_text("[Version]\nAppVersion=5.11\n")
+
+        result = await process_raw(
+            mock_ctx,
+            str(raw_file),
+            str(pp3_file),
+            include_preview=False,
+            manual_override_unverified_export=True,
+        )
+        assert result["error"] == "manual_override_not_available"
+        assert result["reason"] == "Manual unverified export is disabled for autonomous workflows."
+        assert "not a suggestion" in result["gate_message"].lower()
+        assert "close to" not in result["gate_message"].lower()
+        assert "acceptable" not in result["gate_message"].lower()
+
+    async def test_manual_override_allows_unverified_generated_profile_export_when_enabled(self, mock_ctx, tmp_path):
+        raw_file = tmp_path / "photo.cr2"
+        raw_file.write_bytes(b"raw")
+        pp3_file = mock_ctx.lifespan_context["config"].custom_templates_dir / "generated.pp3"
+        pp3_file.write_text("[Version]\nAppVersion=5.11\n")
+        mock_ctx.lifespan_context["config"] = mock_ctx.lifespan_context["config"].__class__(
+            **{
+                **mock_ctx.lifespan_context["config"].__dict__,
+                "allow_manual_unverified_export": True,
+            }
+        )
 
         mock_result = {"success": True, "output_path": "/output/photo.jpg", "processing_time": 1.5, "file_size": 1000}
         with patch("rawtherapee_mcp.server.run_rt_cli", return_value=mock_result):

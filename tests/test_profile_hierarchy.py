@@ -176,6 +176,7 @@ def test_list_templates_does_not_expose_generated_variants(custom_dir: Path, par
         haldclut_dir=None,
         lcp_dir=None,
         lensfun_dir=None,
+        allow_manual_unverified_export=False,
     )
     ctx = MagicMock()
     ctx.lifespan_context = {"config": config}

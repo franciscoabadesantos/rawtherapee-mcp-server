@@ -140,6 +140,12 @@ RAW_EXTENSIONS = frozenset(
     }
 )
 
+_NON_OVERRIDEABLE_GATE_MESSAGE = (
+    "The verification gate is not a suggestion. This decision means the edit did not meet export quality "
+    "requirements. The agent must not override this decision. Generate a new edit through "
+    "auto_edit_manifest_select_prepare, or accept the non-export result."
+)
+
 
 def _get_templates_dir() -> Path:
     """Get the path to built-in PP3 templates."""
@@ -1155,7 +1161,7 @@ async def generate_editorial_candidates(
     style_direction: str | None = None,
     editing_vision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Legacy/debug/manual candidate generator; not for autonomous final edits.
+    """DO NOT USE FOR AUTONOMOUS EDITING. DO NOT USE FOR FINAL EXPORT.
 
     Creates clean_editorial, warm_travel, and cinematic_soft profiles with
     stronger visible differences. Do not use for autonomous final edits.
@@ -1254,7 +1260,7 @@ async def generate_vision_candidates(
     intensity: str = "medium",
     device_preset: str | None = None,
 ) -> dict[str, Any]:
-    """Generate 3 safe editorial candidates from high-level visual moves.
+    """DO NOT USE FOR AUTONOMOUS EDITING. DO NOT USE FOR FINAL EXPORT.
 
     Creates faithful_refinement, expressive_refinement, and restrained_experiment
     profiles from the editing vision instead of fixed style presets.
@@ -1356,7 +1362,7 @@ async def legacy_generate_vision_candidates(
     intensity: str = "medium",
     device_preset: str | None = None,
 ) -> dict[str, Any]:
-    """Legacy visual-move candidate generator (debug/manual-only path).
+    """DO NOT USE FOR AUTONOMOUS EDITING. DO NOT USE FOR FINAL EXPORT.
 
     This exposes the old autonomous candidate flow explicitly for debug and
     A/B comparison. Default autonomous editing should use
@@ -1978,7 +1984,11 @@ async def auto_edit_predictive_prepare(
     diagnosis_override: dict[str, Any] | None = None,
     verification_feedback: dict[str, Any] | None = None,
 ) -> dict[str, Any] | ToolResult:
-    """Prepare predictive edit and previews; final decision must happen in verify_predictive_edit."""
+    """DO NOT USE FOR AUTONOMOUS EDITING. Deterministic fallback/debug prepare only.
+
+    Final decision must happen in verify_predictive_edit. Use
+    auto_edit_manifest_select_prepare + verify_predictive_edit instead.
+    """
     if _has_explicit_verification_scores(verification_feedback):
         return {
             "error": "verification_feedback_not_allowed_in_prepare",
@@ -2133,6 +2143,13 @@ async def verify_predictive_edit(
         ),
         "export_path": export_path,
     }
+    if decision in {"proof_only", "failed_edit_quality", "crop_only_improvement"}:
+        output["gate_message"] = _NON_OVERRIDEABLE_GATE_MESSAGE
+        output["required_workflow"] = [
+            "auto_edit_manifest_select_prepare",
+            "verify_predictive_edit",
+            "process_raw with verification_id",
+        ]
     verification_marker = _write_verification_marker(
         config,
         raw_path=source_raw,
@@ -2163,7 +2180,7 @@ async def auto_edit_predictive(
     diagnosis_override: dict[str, Any] | None = None,
     verification_feedback: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Backward-compatible wrapper for prepare-first predictive editing.
+    """DO NOT USE FOR AUTONOMOUS EDITING. Backward-compatible fallback/debug wrapper.
 
     This wrapper intentionally cannot produce a final visual-verification
     decision. Use verify_predictive_edit for final scoring and export gating.
@@ -2369,10 +2386,10 @@ async def process_raw(
     Use this to convert a RAW file to JPEG, TIFF, or PNG using a PP3 profile.
     The profile controls all processing parameters (exposure, white balance,
     sharpening, etc.). Autonomous/generated profiles must be verified first via
-    auto_edit_manifest_select_prepare + verify_predictive_edit, unless an explicit
-    manual override is supplied. Returns an inline thumbnail when include_preview is True.
+    auto_edit_manifest_select_prepare + verify_predictive_edit before export.
+    Returns an inline thumbnail when include_preview is True.
     Params: file_path, profile_path, output_format, output_path, jpeg_quality, bit_depth,
-    include_preview, preview_max_width, verification_id, manual_override_unverified_export
+    include_preview, preview_max_width, verification_id
     """
     config = get_config(ctx)
     rt_check = _require_rt(config)
@@ -2386,6 +2403,17 @@ async def process_raw(
         return {"error": f"RAW file not found: {file_path}"}
     if not pp3_path.is_file():
         return {"error": f"Profile not found: {profile_path}"}
+    if manual_override_unverified_export and not config.allow_manual_unverified_export:
+        return {
+            "error": "manual_override_not_available",
+            "reason": "Manual unverified export is disabled for autonomous workflows.",
+            "required_workflow": [
+                "auto_edit_manifest_select_prepare",
+                "verify_predictive_edit",
+                "process_raw with verification_id",
+            ],
+            "gate_message": _NON_OVERRIDEABLE_GATE_MESSAGE,
+        }
 
     if _profile_requires_verification(config, pp3_path):
         verified, marker, verification_error = _validate_export_verification(
@@ -2403,9 +2431,13 @@ async def process_raw(
                 "verification_required_before_export": True,
                 "recommended_prepare_tool": "auto_edit_manifest_select_prepare",
                 "recommended_verify_tool": "verify_predictive_edit",
-                "manual_override_parameter": "manual_override_unverified_export",
-                "manual_override_required": True,
                 "verification_marker": marker,
+                "required_workflow": [
+                    "auto_edit_manifest_select_prepare",
+                    "verify_predictive_edit",
+                    "process_raw with verification_id",
+                ],
+                "gate_message": _NON_OVERRIDEABLE_GATE_MESSAGE,
             }
 
     # Check for Crop+Resize conflict (RT 5.12 bug) — text-based to avoid
@@ -2662,7 +2694,9 @@ async def adjust_profile(
     adjustments: dict[str, Any],
     save_as: str | None = None,
 ) -> dict[str, Any]:
-    """Modify specific parameters in an existing PP3 profile.
+    """DO NOT USE FOR AUTONOMOUS EDITING. DO NOT USE FOR FINAL EXPORT.
+
+    Modify specific parameters in an existing PP3 profile.
 
     Use this to tweak individual settings without recreating the entire profile.
     Only the specified parameters are changed; all other settings are preserved.

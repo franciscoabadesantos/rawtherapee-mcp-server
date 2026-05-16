@@ -43,6 +43,7 @@ def mock_config(tmp_dirs: dict[str, Path]) -> RTConfig:
         haldclut_dir=None,
         lcp_dir=None,
         lensfun_dir=None,
+        allow_manual_unverified_export=False,
     )
 
 
@@ -59,6 +60,7 @@ def mock_config_no_rt(tmp_dirs: dict[str, Path]) -> RTConfig:
         haldclut_dir=None,
         lcp_dir=None,
         lensfun_dir=None,
+        allow_manual_unverified_export=False,
     )
 
 
